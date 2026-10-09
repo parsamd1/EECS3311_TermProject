@@ -1,0 +1,212 @@
+@startuml class-3-listing-workflow
+!include style.iuml
+title 3.4 Domain model: listing, export, simulation, workflow and sessions
+
+package "avsa.domain" {
+
+  class VehicleProfile <<ref>>
+  class VehicleHistory <<ref>>
+  class MarketSnapshot <<ref>>
+  class PriceRecommendation <<ref>>
+  class PositioningReport <<ref>>
+  class DepreciationForecast <<ref>>
+  class OfferEvaluation <<ref>>
+
+  class GeneratedListing {
+    - title : String
+    - description : String
+    - highlights : List<String>
+    - conditionDisclosure : String
+    - price : Money
+    - seoKeywords : List<String>
+    - tone : Tone
+    - templateFallback : boolean
+    - validationOverridden : boolean
+    - editedByUser : boolean
+    + isExportable() : boolean
+  }
+
+  class ValidationReport {
+    - checkedAt : Instant
+    + isValid() : boolean
+  }
+
+  class Violation {
+    - rule : ValidationRule
+    - message : String
+  }
+
+  class PlatformProfile {
+    - platform : Platform
+    - fieldLimits : Map<String, Integer>
+    - requiredFields : List<String>
+    - priceFormat : String
+    - lastVerified : LocalDate
+  }
+
+  class ExportedListing {
+    - fields : Map<String, String>
+    - warnings : List<String>
+    - trimmedSections : List<String>
+    - outputFile : Path [0..1]
+  }
+
+  class SimulationSession {
+    - id : UUID
+    - persona : Persona
+    - maxTurns : int = 10
+    - status : SimulationStatus
+    - listingGaps : List<String>
+  }
+
+  class ChatTurn {
+    - speaker : Speaker
+    - message : String
+    - offerAmount : Money [0..1]
+    - intent : BuyerIntent [0..1]
+    - timestamp : Instant
+  }
+
+  class CoachingReport {
+    - disclosureFeedback : String
+    - floorFeedback : String
+    - redFlags : List<String>
+  }
+
+  class Plan {
+    - goal : String
+    - maxSteps : int
+    - autoApprove : boolean = false
+    - templatePlan : boolean
+    - status : PlanStatus
+    + nextPendingStep() : PlanStep [0..1]
+  }
+
+  class PlanStep {
+    - type : StepType
+    - status : StepStatus
+    - checkpoint : boolean
+    - attempts : int
+    - resultSummary : String
+  }
+
+  class SalesPackage {
+    - summary : String
+  }
+
+  class Session {
+    - id : UUID
+    - name : String
+    - lastModified : Instant
+    - schemaVersion : int
+    - readOnly : boolean
+    + activeProfile() : VehicleProfile
+    + setHistory(history : VehicleHistory) : void
+    + addSnapshot(snapshot : MarketSnapshot) : void
+    + latestSnapshot() : MarketSnapshot [0..1]
+    + setActivePrice(rec : PriceRecommendation) : void
+    + activePrice() : PriceRecommendation [0..1]
+    + setPositioning(report : PositioningReport) : void
+    + setForecast(forecast : DepreciationForecast) : void
+    + addListing(listing : GeneratedListing) : void
+    + addOffer(evaluation : OfferEvaluation) : void
+    + addSimulation(sim : SimulationSession) : void
+  }
+
+  enum Tone {
+    PROFESSIONAL
+    FRIENDLY
+    CONCISE
+  }
+  enum ValidationRule {
+    DEFECT_NOT_DISCLOSED
+    BANNED_CLAIM
+    FACT_MISMATCH
+    LENGTH_OUT_OF_BOUNDS
+  }
+  enum Platform {
+    AUTOTRADER
+    KIJIJI
+    FACEBOOK_MARKETPLACE
+  }
+  enum Persona {
+    SERIOUS
+    LOW_BALLER
+    DEALER
+    SUSPICIOUS
+  }
+  enum StepType {
+    FIND_COMPARABLES
+    RECOMMEND_PRICE
+    FORECAST
+    ANALYZE_POSITIONING
+    GENERATE_LISTING
+    EXPORT_LISTING
+  }
+  enum CheckpointDecision {
+    APPROVE
+    REJECT
+    CHANGE_STRATEGY
+  }
+  enum PlanStatus {
+    RUNNING
+    AWAITING_APPROVAL
+    PAUSED
+    COMPLETED
+    CANCELLED
+  }
+  enum StepStatus {
+    PENDING
+    RUNNING
+    DONE
+    FAILED
+    SKIPPED
+  }
+
+  GeneratedListing "1" *-- "1" ValidationReport
+  ValidationReport "1" *-- "0..*" Violation
+  GeneratedListing ..> Tone
+  Violation ..> ValidationRule
+
+  ExportedListing --> "1" GeneratedListing : from >
+  ExportedListing --> "1" PlatformProfile : formattedFor >
+  PlatformProfile ..> Platform
+
+  SimulationSession "1" *-- "0..*" ChatTurn : transcript {ordered}
+  SimulationSession "1" *-- "0..1" CoachingReport
+  SimulationSession --> "1" GeneratedListing : tests >
+  SimulationSession ..> Persona
+
+  Plan "1" *-- "1..*" PlanStep : steps {ordered}
+  Plan "1" *-- "0..1" SalesPackage : produces
+  Plan ..> PlanStatus
+  PlanStep ..> StepType
+  PlanStep ..> StepStatus
+  SalesPackage o-- "1" PriceRecommendation
+  SalesPackage o-- "0..1" DepreciationForecast
+  SalesPackage o-- "0..1" PositioningReport
+  SalesPackage o-- "0..1" GeneratedListing
+  SalesPackage o-- "0..*" ExportedListing
+
+  Session "1" *-- "1" VehicleProfile
+  Session "1" *-- "0..1" VehicleHistory
+  Session "1" *-- "0..*" MarketSnapshot : snapshots
+  Session "1" *-- "0..*" PriceRecommendation
+  Session "1" *-- "0..*" GeneratedListing
+  Session "1" *-- "0..1" PositioningReport
+  Session "1" *-- "0..1" DepreciationForecast
+  Session "1" *-- "0..*" OfferEvaluation : offerLog
+  Session "1" *-- "0..*" SimulationSession
+
+  note bottom of Session
+    setHistory() also marks the active
+    PriceRecommendation stale (F04).
+  end note
+
+  note right of GeneratedListing
+    isExportable() is true only when the
+    validation report is valid or the user
+    explicitly overrode it (F07, F08).
+  end note
+}
+@enduml

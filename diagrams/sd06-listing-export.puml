@@ -1,0 +1,86 @@
+@startuml sd06-listing-export
+!include seq-style.iuml
+title SD06 Generate and export a listing (F07, F08; UC07, UC08): Factory Method + Template Method
+
+actor Seller
+boundary ":MainWindow" as GUI
+control ":AgentController" as AC
+participant ":ToolManager" as TM
+participant ":ListingTool" as LT
+participant ":AiTaskRunner" as AIR
+participant ":ListingValidator" as LV
+entity "listing:GeneratedListing" as GL
+participant ":ExportTool" as ET
+participant ":ExporterFactory" as EF
+participant ":PlatformProfileLoader" as PPL
+participant "exporter:KijijiExporter" as KE
+entity ":Session" as S
+participant ":EventBus" as EB
+
+== Generate listing (F07) ==
+Seller -> GUI : tone, sections, keywords, Generate
+GUI -> AC ++ : generateListing(options)
+AC -> TM ++ : execute("listing", args)
+TM -> LT ++ : execute(args)
+loop attempt = 1 .. 3 (first draft + up to 2 regenerations)
+  LT -> AIR ++ : run(ListingDraftTask(facts, mustDisclose, options, violations))
+  ref over AIR : SD00 (fallback: TemplateListingWriter.write(facts, options))
+  AIR --> LT -- : AiResult<GeneratedListing>
+  LT -> LV ++ : validate(listing, facts)
+  LV --> LT -- : ValidationReport
+  break report.isValid()
+    LT -> LT : stop regenerating
+  end
+  LT -> LT : violations = report.violations
+end
+opt still invalid after 3 attempts
+  LT -> LT : keep best draft; not exportable until fixed or overridden
+end
+LT --> TM -- : ToolResult(listing)
+TM --> AC -- : ToolResult
+AC -> S : addListing(listing)
+AC -> EB : publish(ListingGenerated)
+AC --> GUI -- : listing + validation panel
+opt Edit Listing (extension)
+  Seller -> GUI : edit text or Make shorter
+  GUI -> AC ++ : editListing(edit)
+  AC -> LV ++ : validate(edited, facts)
+  LV --> AC -- : ValidationReport
+  AC --> GUI -- : updated validation status
+end
+
+== Export to a platform (F08) ==
+Seller -> GUI : choose Kijiji, Export
+GUI -> AC ++ : exportListing(KIJIJI, out)
+AC -> TM ++ : execute("export", args)
+TM -> ET ++ : execute(args)
+ET -> GL ++ : isExportable()
+GL --> ET -- : exportable
+alt not exportable
+  ET --> TM : ToolResult(error: listing failed validation)
+else exportable
+  ET -> EF ++ : createExporter(KIJIJI)
+  EF -> PPL ++ : load(KIJIJI)
+  PPL --> EF -- : PlatformProfile (limits, lastVerified)
+  EF -> KE ** : create(profile)
+  EF --> ET -- : exporter (as ListingExporter)
+  ET -> KE ++ : export(listing)
+  KE -> KE : checkPrerequisites(listing)
+  KE -> KE : mapFields(listing)
+  note right : Kijiji-specific
+  KE -> KE : applyLimits(fields)
+  note right : trims keywords, then features, then\nmaintenance; never disclosure or price
+  KE -> KE : render(fields)
+  note right : Kijiji-specific
+  KE -> KE : verifyDisclosure(fields)
+  KE --> ET -- : ExportedListing
+  opt out file given
+    ET -> ET : write file (on failure: warn, offer clipboard)
+  end
+  ET --> TM : ToolResult(exported)
+end
+deactivate ET
+TM --> AC -- : ToolResult
+AC -> EB : publish(SessionUpdated("export"))
+AC --> GUI -- : preview or "export blocked"
+@enduml

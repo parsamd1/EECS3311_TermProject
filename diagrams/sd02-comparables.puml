@@ -1,0 +1,73 @@
+@startuml sd02-comparables
+!include seq-style.iuml
+title SD02 Find comparable listings (F02, UC02): Command, Proxy, AI review
+
+actor Seller
+boundary ":MainWindow" as GUI
+control ":AgentController" as AC
+participant ":ToolManager" as TM
+participant ":MarketSearchTool" as MST
+participant ":ComparableFinder" as CF
+participant ":CachingMarketDataSource" as PX
+participant "real:MarketDataSource" as REAL
+participant ":ListingCache" as CACHE
+participant ":SeededDatasetSource" as SEED
+participant ":SimilarityScorer" as SC
+participant ":AiTaskRunner" as AIR
+entity ":Session" as S
+participant ":EventBus" as EB
+actor "Market Data Source\n<<external service>>" as EXT
+
+Seller -> GUI : radius, source, Find comparables
+GUI -> AC ++ : findComparables(request)
+AC -> S ++ : activeProfile()
+S --> AC -- : profile
+AC -> TM ++ : execute("market_search", args)
+TM -> MST ++ : execute(args)
+MST -> CF ++ : find(profile, request)
+note right of CF : Gazetteer.resolve() gives the origin;\nListingNormalizer and OutlierFilter\nclean the records (3.7, 3.8)
+CF -> PX ++ : search(query)
+PX -> REAL ++ : isAvailable()
+REAL --> PX -- : available
+alt real source available
+  PX -> REAL ++ : search(query)
+  REAL -> EXT : fetch listings
+  EXT --> REAL : records
+  REAL --> PX -- : result
+  PX -> CACHE : put(query, result)
+else unavailable, cached result exists
+  PX -> CACHE ++ : latest(query)
+  CACHE --> PX -- : result (fromCache = true, retrievedAt)
+else unavailable, no cached result
+  PX -> SEED ++ : search(query)
+  SEED --> PX -- : result
+end
+PX --> CF -- : MarketSearchResult
+loop each normalized listing
+  CF -> SC ++ : score(profile, history, listing)
+  SC --> CF -- : ScoreBreakdown
+end
+opt fewer than 3 comparables
+  CF -> CF : widen(request) and search again\n(radius, then years, then trim)
+end
+CF --> MST -- : snapshot (ranked, unreviewed)
+MST -> AIR ++ : run(CompReviewTask(top listings))
+ref over AIR : SD00 Standard AI task execution
+AIR --> MST -- : AiResult<flags>
+alt usedFallback is false
+  MST -> CF ++ : applyReview(snapshot, flags)
+  loop each flagged listing
+    CF -> SC : applyFlags(listing, flags)
+  end
+  CF --> MST -- : snapshot (re-ranked, stats)
+else LLM unavailable
+  MST -> MST : mark listings "unreviewed"
+end
+MST --> TM -- : ToolResult(snapshot)
+TM -> TM : AgentTrace.recordToolCall(...)
+TM --> AC -- : ToolResult
+AC -> S : addSnapshot(snapshot)
+AC -> EB : publish(MarketDataReady)
+AC --> GUI -- : snapshot
+GUI --> Seller : ranked table, score breakdowns, flags,\ncache date or low-confidence notice
+@enduml

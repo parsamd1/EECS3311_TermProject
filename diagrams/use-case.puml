@@ -1,0 +1,67 @@
+@startuml use-case
+title Figure 5.1 AVSA use-case diagram (overview)
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam dpi 130
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor White
+  BorderColor #333333
+}
+skinparam actorStyle awesome
+
+actor "Seller" as Seller
+actor "LLM Service\n<<AI service>>" as LLM
+actor "Market Data Source\n<<external service>>" as Market
+
+rectangle "AI Vehicle Sales Assistant (AVSA)" {
+  usecase "UC01 Manage Vehicle Profile" as UC01
+  usecase "UC04 Import Vehicle History" as UC04
+  usecase "UC02 Find Comparable Listings" as UC02
+  usecase "UC03 Get Price Recommendation" as UC03
+  usecase "UC05 Analyze Competitive Position" as UC05
+  usecase "UC06 Forecast Cost of Waiting" as UC06
+  usecase "UC07 Generate Listing" as UC07
+  usecase "UC08 Export Listing to Platform" as UC08
+  usecase "UC09 Practise Buyer Negotiation" as UC09
+  usecase "UC11 Evaluate Dealer Offer" as UC11
+  usecase "UC10 Manage Saved Sessions" as UC10
+  usecase "UC12 Run Guided Sales Workflow\n(see Figure 5.2)" as UC12
+
+  usecase "Accept AI Price\nAdjustments" as ADJ
+  usecase "Validate Listing\nDisclosures" as VAL
+  usecase "Edit Listing" as EDIT
+  usecase "Get Coaching Report" as COACH
+  usecase "Compare Snapshots" as CMP
+}
+
+Seller -- UC01
+Seller -- UC04
+Seller -- UC02
+Seller -- UC03
+Seller -- UC05
+Seller -- UC06
+Seller -- UC07
+Seller -- UC08
+Seller -- UC09
+Seller -- UC11
+Seller -- UC10
+Seller -- UC12
+
+UC02 -- Market
+UC02 -- LLM
+UC03 -- LLM
+UC05 -- LLM
+UC07 -- LLM
+UC09 -- LLM
+UC11 -- LLM
+UC12 -- LLM
+
+UC03 <.. ADJ : <<extend>>
+UC07 ..> VAL : <<include>>
+UC08 ..> VAL : <<include>>
+UC07 <.. EDIT : <<extend>>
+UC09 ..> COACH : <<include>>
+UC10 <.. CMP : <<extend>>
+@enduml

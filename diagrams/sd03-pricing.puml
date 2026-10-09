@@ -1,0 +1,61 @@
+@startuml sd03-pricing
+!include seq-style.iuml
+title SD03 Get price recommendation (F03, UC03): Strategy
+
+actor Seller
+boundary ":MainWindow" as GUI
+control ":AgentController" as AC
+entity "params:PricingParameters" as PP
+participant ":ToolManager" as TM
+participant ":PricingTool" as PT
+participant ":PricingEngine" as PE
+participant "strategy:QuickSaleStrategy" as QS
+participant ":AiTaskRunner" as AIR
+entity ":Session" as S
+participant ":EventBus" as EB
+
+Seller -> GUI : choose Quick sale, Calculate
+GUI -> AC ++ : recommendPrice(QUICK_SALE, params)
+AC -> PP ++ : validate()
+PP --> AC -- : errors
+alt errors (negative margin, spread >= 100%)
+  AC --> GUI : errors
+  GUI --> Seller : parameter rejected
+else valid
+  AC -> TM ++ : execute("pricing", args)
+  TM -> PT ++ : execute(args)
+  PT -> QS ** : create (from StrategyType)
+  PT -> PE ++ : recommend(input, strategy)
+  PE -> PE : baseline(comps)
+  PE -> PE : retailRange(baseline, params)
+  PE -> PE : wholesaleRange(retail, params)
+  PE -> QS ++ : askingPrice(wholesale, retail)
+  QS --> PE -- : asking
+  PE -> QS ++ : walkAwayFloor(wholesale, retail)
+  QS --> PE -- : floor = bottom of wholesale range
+  PE -> PE : checkSanity(rec)
+  opt fewer than 3 comparables or no history
+    PE -> PE : confidence = LOW, add warning
+  end
+  PE --> PT -- : rec
+  PT -> AIR ++ : run(PriceExplanationTask(rec))
+  ref over AIR : SD00
+  AIR --> PT -- : AiResult<explanation, proposed adjustments>
+  PT --> TM -- : ToolResult(rec)
+  TM --> AC -- : ToolResult
+  AC --> GUI : rec
+  GUI --> Seller : price ladder, adjustments, confidence, explanation
+
+  Seller -> GUI : accept some AI adjustments, Accept price
+  GUI -> AC : acceptPrice(rec, acceptedAiIds)
+  opt acceptedAiIds not empty
+    AC -> TM ++ : execute("pricing", args + accepted adjustments)
+    note right of TM : same flow as above; each\nAI_PROPOSED adjustment capped at ±3%
+    TM --> AC -- : ToolResult(updated rec)
+  end
+  AC -> S : setActivePrice(rec)
+  AC -> EB : publish(PriceRecommended)
+  AC --> GUI : active price
+end
+deactivate AC
+@enduml

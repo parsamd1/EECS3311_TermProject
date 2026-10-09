@@ -1,0 +1,97 @@
+@startuml sd01-profile-sessions
+!include seq-style.iuml
+title SD01 Manage vehicle profile and saved sessions (F01, F10; UC01, UC10)
+
+actor Seller
+boundary ":MainWindow" as GUI
+boundary ":AvsaCli" as CLI
+control ":AgentController" as AC
+entity "profile:VehicleProfile" as VP
+entity ":ConditionReport" as CR
+participant ":SessionService" as SS
+participant ":EventBus" as EB
+participant ":AutoSaveListener" as ASL
+database ":JsonSessionRepository" as REPO
+participant ":SchemaMigrator" as MIG
+entity "session:Session" as S
+
+== Create or edit a profile (F01), then auto-save (F10) ==
+Seller -> GUI : enter details, add defects, Submit
+GUI -> AC ++ : saveProfile(input)
+AC -> VP ** : create(input)
+AC -> VP ++ : validate()
+VP -> CR ++ : gradeConflictsWithDefects()
+CR --> VP -- : conflict
+VP --> AC -- : errors
+alt errors not empty (year, odometer out of range)
+  AC --> GUI : errors
+  GUI --> Seller : inline errors; form not submitted
+else valid
+  AC -> CR ++ : severityScore(), suggestedGrade()
+  CR --> AC -- : score, grade
+  opt grade conflicts with defects
+    AC --> GUI : ask seller to confirm grade
+  end
+  AC -> SS ++ : findMatching(profile)
+  SS --> AC -- : match [0..1]
+  opt matching profile exists
+    AC --> GUI : offer to open existing session
+  end
+  AC -> SS ++ : create(profile)
+  SS --> AC -- : session
+  AC -> EB ++ : publish(ProfileUpdated)
+  EB -> GUI : onEvent(ProfileUpdated)
+  EB -> ASL ++ : onEvent(ProfileUpdated)
+  ASL -> SS ++ : saveCurrent()
+  SS -> REPO ++ : save(session)
+  alt disk full or permission denied
+    REPO --> SS : IOException
+    SS -> SS : keep in pendingWrites, retry later
+  else saved
+    REPO --> SS -- : ok
+  end
+  SS --> ASL --
+  ASL --> EB --
+  EB --> AC --
+  AC --> GUI : profile
+  GUI --> Seller : saved profile, severity score, suggested grade
+end
+deactivate AC
+note over EB, REPO : Every later "publish(...)" in SD02–SD08 is delivered\nthe same way: GUI and CLI refresh, AutoSaveListener saves.
+
+== Load a saved session from the CLI (F10) ==
+Seller -> CLI : avsa session load <id>
+CLI -> AC ++ : sessions()
+AC --> CLI -- : SessionService
+CLI -> SS ++ : open(id)
+SS -> REPO ++ : load(id)
+opt a file is corrupt
+  REPO -> REPO : move it to quarantineDir; keep valid parts
+end
+REPO -> MIG ++ : canMigrate(fromVersion)
+MIG --> REPO -- : yes / no
+alt older version, migration possible
+  REPO -> MIG ++ : migrate(json)
+  MIG --> REPO -- : json (current version)
+else cannot migrate
+  REPO -> REPO : readOnly = true
+end
+REPO -> S ** : rebuild
+REPO --> SS -- : session
+SS -> S ++ : latestSnapshot()
+S --> SS -- : snapshot
+opt snapshot older than freshness threshold
+  SS -> SS : add warning "refresh comparables (UC02)"
+end
+SS --> CLI -- : session + warnings
+CLI --> Seller : session summary (with --json: summary + AgentTrace)
+
+== Compare Snapshots (extension of UC10) ==
+Seller -> CLI : avsa session compare <a> <b>
+CLI -> SS ++ : compare(a, b)
+SS -> REPO ++ : load(a), load(b)
+REPO --> SS -- : snapshots
+SS -> SS : diff median price, recommended price
+SS --> CLI -- : SnapshotComparison
+CLI --> Seller : comparison table
+@enduml

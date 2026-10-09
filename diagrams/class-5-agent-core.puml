@@ -1,0 +1,184 @@
+@startuml class-5-agent-core
+!include style.iuml
+left to right direction
+title 3.6 Agent core
+
+package "avsa.application (see 3.5)" {
+  class AgentController <<ref>>
+  class PlanExecutor <<ref>>
+}
+
+package "avsa.agent.tasks" {
+  class CompReviewTask
+  class PriceExplanationTask
+  class PositioningTask
+  class ListingDraftTask
+  class CounterScriptTask
+  class PlanProposalTask
+  class BuyerTurnTask
+  class CoachingTask
+}
+
+package "avsa.agent" {
+
+  class Planner {
+    + propose(goal : String, profile : VehicleProfile) : Plan
+  }
+
+  class PlanValidator {
+    + validate(plan : Plan) : Plan
+  }
+
+  class StepCatalog {
+    + isRegistered(type : StepType) : boolean
+    + prerequisitesOf(type : StepType) : List<StepType>
+    + isCheckpoint(type : StepType) : boolean
+    + templatePlanFor(goal : String) : Plan
+  }
+
+  class AiTaskRunner {
+    - maxAttempts : int = 2
+    + <T> run(task : AiTask<T>) : AiResult<T>
+  }
+
+  interface "AiTask<T>" as AiTask {
+    + buildPrompt(composer : PromptComposer) : LLMRequest
+    + resultType() : Class<T>
+    + validate(result : T) : List<String>
+    + fallback() : T
+  }
+
+  class "AiResult<T>" as AiResult {
+    - value : T
+    - usedFallback : boolean
+    - notes : List<String>
+  }
+
+  class PromptComposer {
+    + compReview(listings : List<ComparableListing>) : LLMRequest
+    + pricingExplanation(rec : PriceRecommendation) : LLMRequest
+    + positioning(metrics : List<PercentileMetric>) : LLMRequest
+    + listing(facts : VehicleFacts, options : ListingOptions) : LLMRequest
+    + persona(p : Persona, facts : VehicleFacts, turns : List<ChatMessage>) : LLMRequest
+    + coaching(session : SimulationSession) : LLMRequest
+    + counterScript(evaluation : OfferEvaluation) : LLMRequest
+    + plan(goal : String, catalog : StepCatalog) : LLMRequest
+    + repair(request : LLMRequest, errors : List<String>) : LLMRequest
+    - redact(profile : VehicleProfile) : VehicleFacts
+  }
+
+  class ResponseParser {
+    + <T> parse(response : LLMResponse, type : Class<T>) : ParseResult<T>
+  }
+
+  interface LLMClient {
+    + complete(request : LLMRequest) : LLMResponse
+  }
+  class ClaudeClient {
+    - modelId : String
+    - timeout : Duration
+  }
+  class MockLLMClient {
+    - scripted : Queue<LLMResponse>
+    - failureMode : FailureMode
+  }
+
+  class ToolManager <<Invoker>> {
+    - registry : Map<String, Tool>
+    + register(tool : Tool) : void
+    + execute(name : String, args : ToolArgs) : ToolResult
+  }
+
+  interface Tool <<Command>> {
+    + name() : String
+    + execute(args : ToolArgs) : ToolResult
+  }
+
+  class MemoryManager {
+    - maxContextTurns : int
+    + append(conversationId : UUID, turn : ChatMessage) : void
+    + window(conversationId : UUID) : List<ChatMessage>
+  }
+
+  class ConversationMemory {
+    - turns : List<ChatMessage>
+    - summary : String
+  }
+
+  class AgentTrace {
+    + recordToolCall(name : String, args : ToolArgs, result : ToolResult) : void
+    + recordPrompt(request : LLMRequest) : void
+    + recordResponse(response : LLMResponse) : void
+    + toJson() : String
+  }
+
+  class TraceEntry {
+    - timestamp : Instant
+    - kind : TraceKind
+    - name : String
+    - payload : String
+    - error : String [0..1]
+  }
+
+AgentController --> Planner
+AgentController --> AiTaskRunner
+AgentController --> ToolManager
+AgentController --> MemoryManager
+PlanExecutor --> ToolManager
+PlanExecutor --> AiTaskRunner
+
+Planner --> "1" AiTaskRunner
+Planner --> "1" PlanValidator
+PlanValidator --> "1" StepCatalog
+
+AiTaskRunner --> "1" PromptComposer
+AiTaskRunner --> "1" LLMClient
+AiTaskRunner --> "1" ResponseParser
+AiTaskRunner --> "1" AgentTrace
+AiTaskRunner ..> AiTask : runs
+AiTask <|.. CompReviewTask
+AiTask <|.. PriceExplanationTask
+AiTask <|.. PositioningTask
+AiTask <|.. ListingDraftTask
+AiTask <|.. CounterScriptTask
+AiTask <|.. PlanProposalTask
+AiTask <|.. BuyerTurnTask
+AiTask <|.. CoachingTask
+AiTaskRunner ..> AiResult : returns
+LLMClient <|.. ClaudeClient
+LLMClient <|.. MockLLMClient
+
+ToolManager o-- "0..*" Tool
+ToolManager --> "1" AgentTrace
+MemoryManager *-- "0..*" ConversationMemory
+AgentTrace *-- "0..*" TraceEntry
+
+note right of AiTaskRunner
+  Standard AI failure handling (§2.2):
+  call, parse, validate. On timeout or
+  malformed output retry once, then use
+  task.fallback(). usedFallback is
+  labelled in the UI.
+end note
+
+note bottom of PlanValidator
+  Rejects unregistered steps, inserts
+  missing prerequisites, adds required
+  checkpoints, enforces max step count.
+end note
+
+note bottom of PromptComposer
+  The only class that builds prompts.
+  redact() removes the VIN and
+  contact details.
+end note
+
+note bottom of ToolManager
+  Command pattern: ToolManager (invoker)
+  runs any Tool by name, records it in
+  AgentTrace and reports the result.
+  Concrete commands and their receivers
+  (services): see 3.7.
+end note
+}
+@enduml

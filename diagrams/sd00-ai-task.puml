@@ -1,0 +1,49 @@
+@startuml sd00-ai-task
+!include seq-style.iuml
+title SD00 Standard AI task execution (Section 2.2), referenced by every AI step
+
+participant "caller\n(tool or service)" as C
+control ":AiTaskRunner" as R
+participant "task:AiTask<T>" as T
+participant ":PromptComposer" as PC
+participant ":LLMClient" as L
+participant ":ResponseParser" as P
+participant ":AgentTrace" as TR
+actor "LLM Service\n<<AI service>>" as EXT
+
+C -> R ++ : run(task)
+R -> T ++ : buildPrompt(composer)
+T -> PC ++ : <task-specific method>(…)
+note right of PC : facts are redacted:\nno VIN, no contact details
+PC --> T -- : request
+T --> R -- : request
+
+loop attempt = 1 .. maxAttempts (2)
+  R -> TR : recordPrompt(request)
+  R -> L ++ : complete(request)
+  L -> EXT : HTTPS call
+  EXT --> L : model output
+  L --> R -- : response
+  R -> TR : recordResponse(response)
+  R -> P ++ : parse(response, task.resultType())
+  P --> R -- : ParseResult<T>
+  opt parsed
+    R -> T ++ : validate(result)
+    T --> R -- : errors
+  end
+  break parsed and errors is empty
+    R --> C : AiResult(value, usedFallback = false)
+  end
+  alt output malformed or failed validation
+    R -> PC ++ : repair(request, errors)
+    PC --> R -- : repaired request
+  else timeout or service unavailable
+    note over R : retry the same request
+  end
+end
+
+R -> T ++ : fallback()
+T --> R -- : deterministic value
+R --> C -- : AiResult(value, usedFallback = true)
+note over C : the UI labels every\nfallback result (Section 2.2)
+@enduml

@@ -1,0 +1,170 @@
+@startuml class-2-pricing-analysis
+!include style.iuml
+title 3.3 Domain model: pricing, positioning, forecast and offers
+
+package "avsa.domain" {
+
+  class VehicleProfile <<ref>>
+  class MarketSnapshot <<ref>>
+  class ComparableListing <<ref>>
+
+  class PricingParameters {
+    - negotiationMargin : double
+    - dealerSpread : double
+    - aiAdjustmentCap : double = 0.03
+    - maxAiAdjustments : int = 3
+    + validate() : List<ValidationError>
+  }
+
+  class PriceRange <<value>> {
+    - low : Money
+    - high : Money
+    + contains(amount : Money) : boolean
+    + midpoint() : Money
+    + positionOf(amount : Money) : double
+  }
+
+  class PriceRecommendation {
+    - id : UUID
+    - strategy : StrategyType
+    - baseline : Money
+    - askingPrice : Money
+    - walkAwayFloor : Money
+    - confidence : Confidence
+    - assumptions : List<String>
+    - explanation : String
+    - templateExplanation : boolean
+    - stale : boolean
+    - createdAt : Instant
+    + markStale() : void
+  }
+
+  class PriceAdjustment {
+    - label : String
+    - amount : Money
+    - kind : AdjustmentKind
+    - accepted : boolean
+  }
+
+  class PositioningReport {
+    - priceJustification : String
+    - removedClaimCount : int
+    - metricsOnly : boolean
+  }
+
+  class PercentileMetric {
+    - name : String
+    - value : double
+    - percentile : double
+  }
+
+  class Claim {
+    - kind : ClaimKind
+    - text : String
+    - evidenceRefs : List<String>
+  }
+
+  class DepreciationForecast {
+    - referencePrice : Money
+    - segment : Segment
+    - monthlyHoldingCost : Money
+    - wholesaleToday : Money
+    - breakEvenMonth : Integer [0..1]
+    - warnings : List<String>
+  }
+
+  class ForecastPoint {
+    - months : int
+    - lowValue : Money
+    - highValue : Money
+    - lossDollars : Money
+    - lossPercent : double
+    - cumulativeHoldingCost : Money
+  }
+
+  class Offer {
+    - amount : Money
+    - buyerType : BuyerType
+    - notes : String
+    - receivedAt : Instant
+  }
+
+  class OfferEvaluation {
+    - verdict : OfferVerdict
+    - positionInWholesale : double
+    - gapToWholesaleTop : Money
+    - counterAmount : Money [0..1]
+    - netIfWaiting : Money [0..1]
+    - script : String
+    - templateScript : boolean
+  }
+
+  enum StrategyType {
+    MAX_PROFIT
+    QUICK_SALE
+  }
+  enum Confidence {
+    HIGH
+    MEDIUM
+    LOW
+  }
+  enum AdjustmentKind {
+    ODOMETER
+    CONDITION
+    HISTORY
+    AI_PROPOSED
+  }
+  enum ClaimKind {
+    ADVANTAGE
+    WEAKNESS
+    REMEDY
+    TALKING_POINT
+  }
+  enum OfferVerdict {
+    LOW_BALL
+    BELOW_AVERAGE
+    FAIR
+    STRONG
+  }
+  enum BuyerType {
+    DEALER
+    PRIVATE
+  }
+
+PriceRecommendation "1" *-- "1" PriceRange : wholesale
+PriceRecommendation "1" *-- "1" PriceRange : retail
+PriceRecommendation "1" *-- "0..*" PriceAdjustment
+PriceRecommendation --> "1" PricingParameters : computedWith >
+PriceRecommendation --> "1" MarketSnapshot : basedOn >
+PriceRecommendation --> "1" VehicleProfile : for >
+PriceRecommendation ..> StrategyType
+PriceRecommendation ..> Confidence
+PriceAdjustment ..> AdjustmentKind
+
+PositioningReport "1" *-- "1..*" PercentileMetric
+PositioningReport "1" *-- "0..*" Claim
+Claim ..> ClaimKind
+Claim --> "1..*" ComparableListing : evidence >
+
+DepreciationForecast "1" *-- "3" ForecastPoint : 3, 6, 12 months
+
+OfferEvaluation --> "1" Offer : evaluates >
+OfferEvaluation --> "1" PriceRecommendation : judgedAgainst >
+OfferEvaluation --> "0..1" DepreciationForecast : comparesWith >
+OfferEvaluation ..> OfferVerdict
+Offer ..> BuyerType
+
+note right of PricingParameters
+  Both values are user-tunable (F03).
+  Default dealerSpread is calibrated from
+  the author's observed dealer offers (§1.7).
+  Validation: margin >= 0, 0 <= spread < 1.
+end note
+
+note bottom of PriceAdjustment
+  AI_PROPOSED adjustments are capped at
+  ±3% of the baseline each and apply
+  only when accepted is true.
+end note
+}
+@enduml

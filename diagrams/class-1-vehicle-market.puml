@@ -1,0 +1,221 @@
+@startuml class-1-vehicle-market
+!include style.iuml
+title 3.2 Domain model: vehicle, history and market data
+
+package "avsa.domain" {
+
+  class Money <<value>> {
+    - amount : BigDecimal
+    - currency : String = "CAD"
+    + plus(other : Money) : Money
+    + minus(other : Money) : Money
+    + times(factor : double) : Money
+  }
+
+  class Location <<value>> {
+    - city : String
+    - province : String
+    - latitude : double
+    - longitude : double
+    + distanceKmTo(other : Location) : double
+  }
+
+  class VehicleProfile {
+    - id : UUID
+    - make : String
+    - model : String
+    - year : int
+    - trim : String
+    - bodyStyle : BodyStyle
+    - odometerKm : int
+    - transmission : Transmission
+    - fuelType : FuelType
+    - vin : String [0..1]
+    - features : List<String>
+    - customModel : boolean
+    + ageInYears(today : LocalDate) : int
+    + segment() : Segment
+    + validate() : List<ValidationError>
+  }
+
+  class MaintenanceRecord {
+    - date : LocalDate
+    - odometerKm : int
+    - description : String
+  }
+
+  class ConditionReport {
+    - overallGrade : ConditionGrade [0..1]
+    + severityScore() : double
+    + suggestedGrade() : ConditionGrade
+    + gradeConflictsWithDefects() : boolean
+  }
+
+  class Defect {
+    - type : DefectType
+    - bodyLocation : String
+    - severity : Severity
+    - note : String
+    - repairEstimate : Money [0..1]
+  }
+
+  class VehicleHistory {
+    - vin : String [0..1]
+    - ownerCount : int [0..1]
+    - serviceRecordCount : int [0..1]
+    - lienStatus : LienStatus
+    - registrationProvinces : List<String>
+    - sourceType : HistorySourceType
+    + hasAccidents() : boolean
+  }
+
+  class AccidentRecord {
+    - date : LocalDate [0..1]
+    - severity : Severity [0..1]
+    - description : String
+  }
+
+  class OdometerReading {
+    - date : LocalDate
+    - odometerKm : int
+    - reportedBy : String
+  }
+
+  class ConsistencyReport {
+    + hasBlockingWarning() : boolean
+  }
+
+  class ConsistencyWarning {
+    - code : WarningCode
+    - message : String
+    - blocking : boolean
+  }
+
+  class MarketSnapshot {
+    - id : UUID
+    - takenAt : Instant
+    - sourceName : String
+    - radiusKm : int
+    - lowConfidence : boolean
+    - skippedRecords : int
+    + rankedListings() : List<ComparableListing>
+  }
+
+  class MarketStats {
+    - count : int
+    - min : Money
+    - median : Money
+    - max : Money
+  }
+
+  class ComparableListing {
+    - listingId : String
+    - source : String
+    - year : int
+    - trim : String
+    - odometerKm : int
+    - askingPrice : Money
+    - distanceKm : double
+    - description : String
+    - url : String
+    - score : double
+    - pinned : boolean
+    - excluded : boolean
+    - reviewed : boolean
+  }
+
+  class ScoreBreakdown {
+    - year : double
+    - odometer : double
+    - trim : double
+    - distance : double
+    - condition : double
+    - history : double
+    - flagPenalty : double
+    + total() : double
+  }
+
+  class ListingFlag {
+    - code : FlagCode
+    - reason : String
+  }
+
+  enum DefectType {
+    DENT
+    SCRATCH
+    RUST
+    MECHANICAL
+  }
+  enum Severity {
+    MINOR
+    MODERATE
+    SEVERE
+  }
+  enum ConditionGrade {
+    EXCELLENT
+    CLEAN
+    AVERAGE
+    ROUGH
+  }
+  enum Segment {
+    ECONOMY
+    SUV
+    TRUCK
+    LUXURY
+    EV
+  }
+  enum LienStatus {
+    NONE
+    OUTSTANDING
+    UNKNOWN
+  }
+  enum HistorySourceType {
+    CARFAX_PDF
+    JSON
+    MANUAL
+  }
+  enum FlagCode {
+    SALVAGE_TITLE
+    TRIM_MISMATCH
+    LIKELY_DUPLICATE
+    PRICE_TOO_LOW_TO_TRUST
+  }
+
+VehicleProfile "1" *-- "1" ConditionReport
+ConditionReport "1" *-- "0..*" Defect
+VehicleProfile "1" *-- "0..*" MaintenanceRecord
+VehicleProfile --> "1" Location : sellerLocation
+
+VehicleHistory "0..1" --> "1" VehicleProfile : describes >
+VehicleHistory "1" *-- "0..*" AccidentRecord
+VehicleHistory "1" *-- "0..*" OdometerReading
+ConsistencyReport "1" *-- "0..*" ConsistencyWarning
+ConsistencyReport --> "1" VehicleHistory : checks >
+
+MarketSnapshot --> "1" VehicleProfile : searchedFor >
+MarketSnapshot "1" *-- "1" MarketStats
+MarketSnapshot "1" *-- "0..*" ComparableListing
+ComparableListing "1" *-- "1" ScoreBreakdown
+ComparableListing "1" *-- "0..*" ListingFlag
+ComparableListing --> "1" Location
+
+Defect ..> DefectType
+Defect ..> Severity
+ConditionReport ..> ConditionGrade
+VehicleProfile ..> Segment
+VehicleHistory ..> LienStatus
+VehicleHistory ..> HistorySourceType
+ListingFlag ..> FlagCode
+
+note bottom of VehicleHistory
+  Fields that could not be parsed stay empty
+  ([0..1]) or UNKNOWN. They are never guessed (F04).
+end note
+
+note bottom of ListingFlag
+  The LLM may only return codes from FlagCode.
+  SimilarityScorer applies a fixed penalty per
+  flag; the LLM never edits a score (F02).
+end note
+}
+@enduml

@@ -1,0 +1,45 @@
+@startuml use-case-workflow
+title Figure 5.2 UC12 Run Guided Sales Workflow and the use cases it includes
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam dpi 130
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor White
+  BorderColor #333333
+}
+skinparam actorStyle awesome
+
+actor "Seller" as Seller
+actor "LLM Service\n<<AI service>>" as LLM
+
+rectangle "AI Vehicle Sales Assistant (AVSA)" {
+  usecase "UC12 Run Guided Sales Workflow" as UC12
+  usecase "Approve Checkpoint" as CHK
+  usecase "UC02 Find Comparable Listings" as UC02
+  usecase "UC03 Get Price Recommendation" as UC03
+  usecase "UC05 Analyze Competitive Position" as UC05
+  usecase "UC06 Forecast Cost of Waiting" as UC06
+  usecase "UC07 Generate Listing" as UC07
+  usecase "UC08 Export Listing to Platform" as UC08
+}
+
+Seller -- UC12
+UC12 -- LLM
+UC12 ..> CHK : <<include>>
+UC12 ..> UC02 : <<include>>
+UC12 ..> UC03 : <<include>>
+UC12 ..> UC05 : <<include>>
+UC12 ..> UC06 : <<include>>
+UC12 ..> UC07 : <<include>>
+UC12 ..> UC08 : <<include>>
+
+note bottom of UC12
+  The validated plan decides which included
+  use cases run and in what order. Every plan
+  contains the strategy-and-price checkpoint;
+  plans that produce a listing also contain
+  the listing-approval checkpoint.
+end note
+@enduml

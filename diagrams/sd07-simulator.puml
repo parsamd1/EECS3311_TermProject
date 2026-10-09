@@ -1,0 +1,67 @@
+@startuml sd07-simulator
+!include seq-style.iuml
+title SD07 Practise buyer negotiation (F09, UC09): memory and negotiation tracking
+
+actor Seller
+boundary ":MainWindow" as GUI
+control ":AgentController" as AC
+participant ":BuyerSimulator" as BS
+entity "sim:SimulationSession" as SIM
+participant ":NegotiationTracker" as NT
+participant ":MemoryManager" as MM
+participant ":AiTaskRunner" as AIR
+entity ":Session" as S
+participant ":EventBus" as EB
+
+== Start ==
+Seller -> GUI : choose persona (low-baller), Start
+GUI -> AC ++ : startSimulation(LOW_BALLER)
+AC -> BS ++ : start(persona, listing)
+BS -> SIM ** : create(persona, maxTurns = 10)
+BS -> NT ** : create(askingPrice, floor)
+BS -> AIR ++ : run(BuyerTurnTask(persona, facts, no turns))
+ref over AIR : SD00
+AIR --> BS -- : AiResult<ChatTurn>
+alt usedFallback (LLM unavailable)
+  BS --> AC : SimulatorUnavailable
+  AC --> GUI : "The simulator needs the AI service" message
+else opening turn received
+  BS -> MM : append(sim.id, buyerTurn)
+  BS -> NT : record(buyerTurn)
+  BS --> AC -- : sim, opening turn
+  AC --> GUI -- : sim, opening turn
+end
+
+== Conversation ==
+loop until accepted, buyer walks away, turn limit, or End
+  Seller -> GUI : type reply
+  GUI -> AC ++ : sendSellerMessage(text)
+  AC -> BS ++ : reply(sim, text)
+  BS -> MM : append(sim.id, sellerTurn)
+  BS -> MM ++ : window(sim.id)
+  MM --> BS -- : recent turns (older ones summarized)
+  BS -> AIR ++ : run(BuyerTurnTask(persona, facts, turns))
+  ref over AIR : SD00 (task.validate() rejects turns that break character\nor state facts not in the profile, so they are regenerated)
+  AIR --> BS -- : AiResult<ChatTurn(message, offer, intent)>
+  BS -> NT : record(buyerTurn)
+  BS -> NT ++ : isBelowFloor(offer)
+  NT --> BS -- : belowFloor
+  BS -> MM : append(sim.id, buyerTurn)
+  BS --> AC -- : buyerTurn
+  AC --> GUI -- : buyerTurn, latestOffer, belowFloor
+  GUI --> Seller : buyer message; side panel updates
+end
+
+== End and coaching ==
+Seller -> GUI : End & get coaching
+GUI -> AC ++ : endSimulation()
+AC -> BS ++ : end(sim)
+BS -> AIR ++ : run(CoachingTask(sim))
+ref over AIR : SD00
+AIR --> BS -- : AiResult<CoachingReport>
+BS --> AC -- : CoachingReport (listing gaps, red flags)
+AC -> S : addSimulation(sim)
+AC -> EB : publish(SessionUpdated("simulation"))
+AC --> GUI -- : CoachingReport
+GUI --> Seller : coaching report
+@enduml

@@ -1,0 +1,190 @@
+@startuml class-4-application
+!include style.iuml
+title 3.5 Presentation and application layers
+
+package "avsa.presentation" {
+  class MainWindow {
+    + start(stage : Stage) : void
+    + onEvent(event : AgentEvent) : void
+  }
+  class AvsaCli {
+    - jsonOutput : boolean
+    + main(args : String[]) : void
+    + onEvent(event : AgentEvent) : void
+  }
+}
+
+package "avsa.application" {
+
+  class AgentController <<Facade>> {
+    + saveProfile(input : ProfileInput) : VehicleProfile
+    + findComparables(request : SearchRequest) : MarketSnapshot
+    + importHistory(input : HistoryInput) : HistoryImportResult
+    + confirmHistory(history : VehicleHistory) : void
+    + recommendPrice(strategy : StrategyType, params : PricingParameters) : PriceRecommendation
+    + acceptPrice(rec : PriceRecommendation, acceptedAiIds : List<UUID>) : void
+    + analyzePositioning() : PositioningReport
+    + forecast(monthlyHoldingCost : Money) : DepreciationForecast
+    + generateListing(options : ListingOptions) : GeneratedListing
+    + editListing(edit : ListingEdit) : GeneratedListing
+    + exportListing(platform : Platform, out : Path) : ExportedListing
+    + startSimulation(persona : Persona) : SimulationSession
+    + sendSellerMessage(text : String) : ChatTurn
+    + endSimulation() : CoachingReport
+    + evaluateOffer(offer : Offer) : OfferEvaluation
+    + runGoal(goal : String) : Plan
+    + answerCheckpoint(decision : CheckpointDecision) : void
+    + resumeRun() : void
+    + cancelRun() : void
+    + sessions() : SessionService
+    + trace() : AgentTrace
+  }
+
+  class SessionService {
+    + current() : Session
+    + create(profile : VehicleProfile) : Session
+    + findMatching(profile : VehicleProfile) : SessionSummary [0..1]
+    + saveCurrent() : void
+    + list() : List<SessionSummary>
+    + open(id : UUID) : Session
+    + duplicate(id : UUID) : Session
+    + delete(id : UUID) : void
+    + compare(a : UUID, b : UUID) : SnapshotComparison
+  }
+
+  class PlanExecutor <<Context>> {
+    - maxRetries : int = 2
+    - plan : Plan
+    - state : PlanRunState
+    + execute(plan : Plan) : void
+    + approve(decision : CheckpointDecision) : void
+    + resume() : void
+    + cancel() : void
+    ~ changeState(next : PlanRunState) : void
+    ~ runNextStep() : StepResult
+  }
+
+  interface PlanRunState <<State>> {
+    + advance(ctx : PlanExecutor) : void
+    + approve(ctx : PlanExecutor, decision : CheckpointDecision) : void
+    + resume(ctx : PlanExecutor) : void
+    + cancel(ctx : PlanExecutor) : void
+    + status() : PlanStatus
+  }
+  class RunningState
+  class AwaitingApprovalState
+  class PausedState
+  class CompletedState
+  class CancelledState
+
+  class EventBus {
+    - listeners : Map<Class, List<EventListener>>
+    + subscribe(type : Class, l : EventListener) : void
+    + unsubscribe(type : Class, l : EventListener) : void
+    + publish(event : AgentEvent) : void
+  }
+
+  interface EventListener {
+    + onEvent(event : AgentEvent) : void
+  }
+
+  class AutoSaveListener {
+    + onEvent(event : AgentEvent) : void
+  }
+
+  abstract class AgentEvent {
+    - occurredAt : Instant
+    - sessionId : UUID
+  }
+  class ProfileUpdated
+  class HistoryUpdated
+  class MarketDataReady
+  class PriceRecommended
+  class ListingGenerated
+  class SessionUpdated {
+    - part : String
+  }
+  class StepProgress {
+    - step : PlanStep
+  }
+  class CheckpointReached {
+    - step : PlanStep
+  }
+}
+
+package "avsa.agent (see 3.6)" {
+  class Planner <<ref>>
+  class AiTaskRunner <<ref>>
+  class ToolManager <<ref>>
+  class MemoryManager <<ref>>
+  class AgentTrace <<ref>>
+}
+
+package "avsa.services (see 3.7)" {
+  class BuyerSimulator <<ref>>
+}
+
+package "avsa.infrastructure (see 3.8)" {
+  class SessionRepository <<ref>>
+}
+
+MainWindow --> "1" AgentController
+AvsaCli --> "1" AgentController
+MainWindow ..|> EventListener
+AvsaCli ..|> EventListener
+AutoSaveListener ..|> EventListener
+
+AgentController *-- "1" EventBus
+AgentController *-- "1" SessionService
+AgentController *-- "1" PlanExecutor
+AgentController --> "1" Planner
+AgentController --> "1" AiTaskRunner
+AgentController --> "1" ToolManager
+AgentController --> "1" MemoryManager
+AgentController --> "1" AgentTrace
+AgentController --> "1" BuyerSimulator : F09 chat
+
+PlanExecutor o-- "1" PlanRunState : current
+PlanRunState <|.. RunningState
+PlanRunState <|.. AwaitingApprovalState
+PlanRunState <|.. PausedState
+PlanRunState <|.. CompletedState
+PlanRunState <|.. CancelledState
+PlanExecutor --> "1" ToolManager
+PlanExecutor --> "1" AiTaskRunner
+PlanExecutor --> "1" EventBus : progress,\ncheckpoints
+
+SessionService --> "1" SessionRepository
+AutoSaveListener --> "1" SessionService : saveCurrent()
+
+EventBus o-- "0..*" EventListener : notifies >
+EventBus ..> AgentEvent : publishes
+AgentEvent <|-- ProfileUpdated
+AgentEvent <|-- HistoryUpdated
+AgentEvent <|-- MarketDataReady
+AgentEvent <|-- PriceRecommended
+AgentEvent <|-- ListingGenerated
+AgentEvent <|-- SessionUpdated
+AgentEvent <|-- StepProgress
+AgentEvent <|-- CheckpointReached
+
+note right of AgentController
+  Single entry point for both front ends.
+  Neither MainWindow nor AvsaCli touches
+  agent, service or infrastructure classes.
+end note
+
+note bottom of PlanRunState
+  Running -> AwaitingApproval at a checkpoint;
+  approve -> Running, reject -> Paused;
+  resume -> Running; last step -> Completed;
+  cancel from any non-final state -> Cancelled.
+  Methods that make no sense in a state
+  (e.g. approve while Running) are ignored.
+end note
+
+note bottom of AutoSaveListener
+  Saves on every state-changing
+  event (F10).
+end note
+@enduml

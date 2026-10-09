@@ -1,0 +1,84 @@
+@startuml sd05-analysis
+!include seq-style.iuml
+title SD05 Analysis features: positioning, forecast, offer evaluation (F05, F06, F11; UC05, UC06, UC11)
+
+actor Seller
+boundary ":MainWindow" as GUI
+control ":AgentController" as AC
+participant ":ToolManager" as TM
+participant ":PositioningTool" as PT
+participant ":PositioningAnalyzer" as PA
+participant ":ClaimValidator" as CV
+participant ":ForecastTool" as FT
+participant ":DepreciationCalculator" as DC
+participant ":DepreciationRateTable" as RT
+participant ":OfferEvaluationTool" as OET
+participant ":OfferEvaluator" as OE
+participant ":AiTaskRunner" as AIR
+entity ":Session" as S
+participant ":EventBus" as EB
+
+note over AC, EB : All three features share one shape: the controller executes a tool; the tool computes\nthe numbers deterministically; an AI step (if any) only writes text about them; the controller stores the result.
+
+== F05 Analyze competitive position ==
+Seller -> GUI : Analyze
+GUI -> AC ++ : analyzePositioning()
+AC -> TM ++ : execute("positioning", args)
+TM -> PT ++ : execute(args)
+PT -> PA ++ : metrics(profile, comps)
+PA --> PT -- : percentile metrics
+PT -> AIR ++ : run(PositioningTask(metrics, top comps))
+ref over AIR : SD00
+AIR --> PT -- : AiResult<PositioningReport>
+alt usedFallback (LLM unavailable or invalid output)
+  PT -> PT : report = metrics only (metricsOnly = true)
+else
+  PT -> CV ++ : filter(report, comps)
+  note right of CV : drops claims whose evidence\nis missing or contradicts metrics
+  CV --> PT -- : report (removedClaimCount)
+end
+PT --> TM -- : ToolResult(report)
+TM --> AC -- : ToolResult
+AC -> S : setPositioning(report)
+AC -> EB : publish(SessionUpdated("positioning"))
+AC --> GUI -- : report
+
+== F06 Forecast cost of waiting (no AI) ==
+Seller -> GUI : holding cost, Forecast
+GUI -> AC ++ : forecast(monthlyHoldingCost)
+AC -> TM ++ : execute("forecast", args)
+TM -> FT ++ : execute(args)
+FT -> DC ++ : forecast(input)
+DC -> RT ++ : bandFor(segment, ageYears)
+RT --> DC -- : RateBand (default or oldest band + warning if needed)
+DC -> DC : monthlyRate(); value at 3, 6, 12 months;\nloss, holding cost, break-even month
+DC --> FT -- : DepreciationForecast
+FT --> TM -- : ToolResult
+TM --> AC -- : ToolResult
+AC -> S : setForecast(forecast)
+AC -> EB : publish(SessionUpdated("forecast"))
+AC --> GUI -- : forecast
+
+== F11 Evaluate dealer offer ==
+Seller -> GUI : amount, buyer type, dealer's reasons, Add offer
+GUI -> AC ++ : evaluateOffer(offer)
+alt no active price, or amount <= 0
+  AC --> GUI : rejected with message
+else valid
+  AC -> TM ++ : execute("offer_evaluation", args)
+  TM -> OET ++ : execute(args)
+  OET -> OE ++ : evaluate(offer, rec, forecast)
+  OE -> OE : classify(amount, wholesale)
+  OE -> OE : counter(verdict, amount, wholesale)
+  OE --> OET -- : OfferEvaluation
+  OET -> AIR ++ : run(CounterScriptTask(evaluation, notes, comps))
+  ref over AIR : SD00 (fallback: template script)
+  AIR --> OET -- : AiResult<script>
+  OET --> TM -- : ToolResult(evaluation)
+  TM --> AC -- : ToolResult
+  AC -> S : addOffer(evaluation)
+  AC -> EB : publish(SessionUpdated("offer"))
+  AC --> GUI : verdict, counter, take-now vs wait, script
+end
+deactivate AC
+@enduml

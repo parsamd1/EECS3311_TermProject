@@ -1,0 +1,8 @@
+# Local tooling (not part of the deliverable)
+plantuml.jar
+Test/
+
+# OS / editor files
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,159 @@
+@startuml class-7-infrastructure
+!include style.iuml
+title 3.8 Infrastructure: market data, history import and persistence
+
+package "avsa.services / avsa.tools (see 3.7)" {
+  class ComparableFinder <<ref>>
+  class HistoryImportTool <<ref>>
+  class ExporterFactory <<ref>>
+}
+
+package "avsa.application (see 3.5)" {
+  class SessionService <<ref>>
+}
+
+package "avsa.infrastructure" {
+
+  interface MarketDataSource <<Subject>> {
+    + name() : String
+    + isAvailable() : boolean
+    + search(query : MarketQuery) : MarketSearchResult
+  }
+  class CachingMarketDataSource <<Proxy>> {
+    - real : MarketDataSource
+    - fallback : MarketDataSource
+    - cache : ListingCache
+    + search(query : MarketQuery) : MarketSearchResult
+  }
+  class ListingCache {
+    + put(query : MarketQuery, result : MarketSearchResult) : void
+    + latest(query : MarketQuery) : MarketSearchResult [0..1]
+  }
+  class MarketSearchResult {
+    - listings : List<RawListing>
+    - fromCache : boolean
+    - retrievedAt : Instant
+  }
+  class SeededDatasetSource {
+    - datasetPath : Path
+  }
+  class CsvImportSource {
+    - csvPath : Path
+  }
+  class LiveSearchSource {
+    - enabled : boolean
+    - endpoint : URI
+  }
+
+  class ListingNormalizer {
+    + normalize(raw : RawListing, origin : Location) : ComparableListing [0..1]
+  }
+
+  class Gazetteer {
+    + resolve(city : String, province : String) : Location [0..1]
+  }
+
+  class HistoryImportService {
+    + importFrom(input : HistoryInput, profile : VehicleProfile) : HistoryImportResult
+  }
+
+  class HistoryConsistencyChecker {
+    + check(history : VehicleHistory, profile : VehicleProfile) : ConsistencyReport
+  }
+
+  interface HistoryImporter <<Target>> {
+    + supports(input : HistoryInput) : boolean
+    + importHistory(input : HistoryInput) : VehicleHistory
+  }
+  class CarfaxPdfAdapter <<Adapter>>
+  class JsonHistoryAdapter <<Adapter>>
+  class ManualHistoryImporter
+
+  class PdfTextExtractor <<Adaptee>> {
+    + extractText(file : Path) : String
+  }
+  class JsonMapper <<Adaptee>> {
+    + <T> read(file : Path, type : Class<T>) : T
+  }
+
+  interface SessionRepository {
+    + save(session : Session) : void
+    + load(id : UUID) : Session
+    + list() : List<SessionSummary>
+    + delete(id : UUID) : void
+    + latestSnapshot(profileId : UUID) : MarketSnapshot [0..1]
+  }
+  class JsonSessionRepository {
+    - dataDir : Path
+    - quarantineDir : Path
+    - pendingWrites : Queue<Session>
+  }
+  class SchemaMigrator {
+    - currentVersion : int
+    + migrate(json : JsonNode) : JsonNode
+    + canMigrate(fromVersion : int) : boolean
+  }
+
+  class PlatformProfileLoader {
+    + load(platform : Platform) : PlatformProfile
+  }
+  class AppConfig {
+    + pricingDefaults() : PricingParameters
+    + depreciationRates() : DepreciationRateTable
+    + llmModelId() : String
+  }
+
+  MarketDataSource <|.. CachingMarketDataSource
+  CachingMarketDataSource --> "1" MarketDataSource : real
+  CachingMarketDataSource --> "1" SeededDatasetSource : fallback
+  CachingMarketDataSource --> "1" ListingCache
+  MarketDataSource ..> MarketSearchResult
+  MarketDataSource <|.. SeededDatasetSource
+  MarketDataSource <|.. CsvImportSource
+  MarketDataSource <|.. LiveSearchSource
+
+  HistoryImportService --> "1..*" HistoryImporter
+  HistoryImportService --> "1" HistoryConsistencyChecker
+  HistoryImporter <|.. CarfaxPdfAdapter
+  HistoryImporter <|.. JsonHistoryAdapter
+  HistoryImporter <|.. ManualHistoryImporter
+  CarfaxPdfAdapter --> "1" PdfTextExtractor : adapts >
+  JsonHistoryAdapter --> "1" JsonMapper : adapts >
+
+  SessionRepository <|.. JsonSessionRepository
+  JsonSessionRepository --> "1" SchemaMigrator
+  JsonSessionRepository --> "1" JsonMapper
+
+  note right of CachingMarketDataSource
+    search(): ask the real source; on success
+    cache the result. If the real source is
+    unavailable, return the latest cached
+    result (fromCache = true, with its date),
+    else the seeded dataset (F02).
+  end note
+
+  note bottom of PdfTextExtractor
+    Wraps a third-party PDF text
+    library (chosen in Stage 2).
+  end note
+
+  note bottom of JsonSessionRepository
+    Corrupt files go to quarantineDir.
+    On disk errors data stays in
+    pendingWrites and is retried (F10).
+  end note
+
+  note bottom of AppConfig
+    Reads editable config files: pricing
+    defaults (incl. dealerSpread), rate
+    table, platform rules, model ID.
+  end note
+}
+
+ComparableFinder --> "1" CachingMarketDataSource : uses only\nthe proxy
+ComparableFinder --> ListingNormalizer
+ComparableFinder --> Gazetteer
+HistoryImportTool --> HistoryImportService
+ExporterFactory --> PlatformProfileLoader
+SessionService --> SessionRepository
+@enduml

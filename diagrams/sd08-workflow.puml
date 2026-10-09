@@ -1,0 +1,93 @@
+@startuml sd08-workflow
+!include seq-style.iuml
+title SD08 Run guided sales workflow (F12, UC12): planning, Command, State, Observer
+
+actor Seller
+boundary ":MainWindow" as GUI
+control ":AgentController" as AC
+participant ":Planner" as PL
+participant ":AiTaskRunner" as AIR
+participant ":PlanValidator" as PV
+participant ":StepCatalog" as SC
+participant ":PlanExecutor" as PE
+participant "state:PlanRunState" as ST
+participant ":ToolManager" as TM
+participant ":EventBus" as EB
+
+== Planning ==
+Seller -> GUI : "Price my car for a quick sale and write a Kijiji ad"
+GUI -> AC ++ : runGoal(goal)
+AC -> PL ++ : propose(goal, profile)
+PL -> AIR ++ : run(PlanProposalTask(goal, catalog))
+ref over AIR : SD00 (fallback: StepCatalog.templatePlanFor(goal))
+AIR --> PL -- : AiResult<Plan>
+PL -> PV ++ : validate(plan)
+loop each step
+  PV -> SC ++ : isRegistered(type), prerequisitesOf(type), isCheckpoint(type)
+  SC --> PV -- : answers
+end
+PV -> PV : drop unknown steps, insert prerequisites\nand checkpoints, enforce max step count
+PV --> PL -- : validated plan
+PL --> AC -- : plan
+AC --> GUI : plan (all steps PENDING)
+AC -> PE ++ : execute(plan)
+note right of PE : runs in the background;\nthe GUI stays responsive
+deactivate AC
+PE -> ST ** : create(RunningState)
+
+== Execution ==
+loop while state is RunningState
+  PE -> ST ++ : advance(ctx)
+  ST -> PE : runNextStep()
+  PE -> TM ++ : execute(step.type, args)
+  ref over TM : SD02 / SD03 / SD05 / SD06\n(failed step: retried up to 2 times)
+  TM --> PE -- : ToolResult
+  PE -> EB : publish(StepProgress(step))
+  EB -> GUI : onEvent: plan view updates
+  alt step failed after retries
+    ST -> PE : changeState(PausedState)
+  else next step is a checkpoint
+    ST -> PE : changeState(AwaitingApprovalState)
+    PE -> EB : publish(CheckpointReached(step))
+    EB -> GUI : onEvent: show approval dialog
+  else last step finished
+    ST -> PE : changeState(CompletedState)
+  else otherwise
+    note over ST : stay in RunningState
+  end
+  deactivate ST
+end
+
+== Checkpoint ==
+Seller -> GUI : Approve / Change strategy / Reject
+GUI -> AC ++ : answerCheckpoint(decision)
+AC -> PE : approve(decision)
+PE -> ST ++ : approve(ctx, decision)
+note right of ST : state is AwaitingApprovalState
+alt APPROVE
+  ST -> PE : changeState(RunningState)
+else CHANGE_STRATEGY
+  ST -> ST : mark affected later steps PENDING
+  ST -> PE : changeState(RunningState)
+else REJECT
+  ST -> PE : changeState(PausedState)
+end
+deactivate ST
+deactivate AC
+note over PE, EB : back in RunningState the execution loop continues
+
+== Cancel (any time) ==
+Seller -> GUI : Stop
+GUI -> AC ++ : cancelRun()
+AC -> PE : cancel()
+PE -> ST ++ : cancel(ctx)
+ST -> PE : changeState(CancelledState)
+note right of ST : completed results kept;\nno partial exports
+deactivate ST
+deactivate AC
+
+== Completion ==
+PE -> EB : publish(SessionUpdated("salesPackage"))
+EB -> GUI : onEvent: show Sales Package and summary
+deactivate PE
+@enduml
