@@ -10,3 +10,9 @@ CLAUDE.md
 
 # Build output
 target/
+
+# Local secrets (never commit real API keys)
+.env
+.env.*
+!.env.example
+config.local.json
