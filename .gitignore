@@ -1,9 +1,12 @@
 # Local tooling (not part of the deliverable)
-plantuml.jar
-Test/
+/plantuml.jar
+/Test/
 
 # OS / editor files
 .DS_Store
 .vscode/
 .idea/
 CLAUDE.md
+
+# Build output
+target/
