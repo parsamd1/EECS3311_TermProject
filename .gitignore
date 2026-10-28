@@ -16,3 +16,6 @@ target/
 .env.*
 !.env.example
 config.local.json
+
+# Personal AI usage records (summarized in the Stage 2 report instead)
+/Usage report/
