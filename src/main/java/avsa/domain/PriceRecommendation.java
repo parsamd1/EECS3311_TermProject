@@ -12,7 +12,7 @@ import java.util.UUID;
  */
 public final class PriceRecommendation {
 
-    private final UUID id;
+    private UUID id;
     private final StrategyType strategy;
     private final Money baseline;
     private final PriceRange retail;
