@@ -1,5 +1,6 @@
 package avsa.services;
 
+import avsa.domain.AccidentRecord;
 import avsa.domain.AdjustmentKind;
 import avsa.domain.ComparableListing;
 import avsa.domain.Confidence;
@@ -11,6 +12,7 @@ import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
 import avsa.domain.Severity;
 import avsa.domain.ValidationError;
+import avsa.domain.VehicleHistory;
 import avsa.domain.VehicleProfile;
 import java.time.Clock;
 import java.time.Instant;
@@ -20,7 +22,7 @@ import java.util.List;
 
 /**
  * Deterministic pricing (F03). Computes the baseline from the comparables,
- * applies condition deductions, derives the retail and wholesale ranges, and
+ * applies condition and history deductions, derives the retail and wholesale ranges, and
  * asks the selected {@link PricingStrategy} for the asking price and floor.
  * The LLM never changes these numbers; it only explains them.
  */
@@ -34,6 +36,8 @@ public final class PricingEngine {
     static final double FEW_COMPARABLES_HALF_WIDTH = 0.03;
     /** Above this relative interquartile spread the market probably mixes segments (e.g. trims). */
     static final double DISPERSION_WARNING = 0.30;
+    static final int INCLUDED_OWNERS = 2;
+    static final double EXTRA_OWNER_RATE = 0.01;
 
     private final Clock clock;
 
@@ -91,6 +95,20 @@ public final class PricingEngine {
             value = value.plus(a.amount());
         }
 
+        VehicleHistory history = input.history();
+        boolean historyComplete = history != null && history.accidentsKnown();
+        if (history == null) {
+            assumptions.add("No vehicle history: neutral assumptions were used and confidence was lowered.");
+        } else {
+            if (!history.accidentsKnown()) {
+                assumptions.add("Accident history is unknown: no deduction was applied and confidence was lowered.");
+            }
+            for (PriceAdjustment a : historyAdjustments(history, baseline)) {
+                adjustments.add(a);
+                value = value.plus(a.amount());
+            }
+        }
+
         double margin = params.negotiationMargin();
         Money expected = value.times(1 - margin);
         PriceRange retail = new PriceRange(expected.times(1 - halfWidth), expected.times(1 + halfWidth)).roundTo(100);
@@ -100,7 +118,8 @@ public final class PricingEngine {
 
         Money asking = strategy.askingPrice(wholesale, retail, margin);
         Money floor = strategy.walkAwayFloor(wholesale, retail);
-        Confidence confidence = confidence(comps.size(), input.manualBaselineValue().isPresent() && comps.size() < MIN_COMPARABLES);
+        Confidence confidence = confidence(comps.size(),
+                input.manualBaselineValue().isPresent() && comps.size() < MIN_COMPARABLES, historyComplete);
 
         PriceRecommendation rec = new PriceRecommendation(strategy.type(), baseline, retail, wholesale, asking, floor,
                 confidence, adjustments, assumptions, warnings, params, Instant.now(clock));
@@ -159,6 +178,33 @@ public final class PricingEngine {
         };
     }
 
+    /**
+     * History deductions (F03 step 2): a share of the baseline per reported accident by severity
+     * (moderate when not stated), and 1% for each owner beyond the second.
+     */
+    static List<PriceAdjustment> historyAdjustments(VehicleHistory history, Money baseline) {
+        List<PriceAdjustment> result = new ArrayList<>();
+        for (AccidentRecord accident : history.accidents()) {
+            Severity severity = accident.severity() != null ? accident.severity() : Severity.MODERATE;
+            result.add(PriceAdjustment.computed("Reported accident (" + severity.name().toLowerCase() + ")",
+                    baseline.times(-accidentRate(severity)), AdjustmentKind.HISTORY));
+        }
+        int extraOwners = history.ownerCount().orElse(0) - INCLUDED_OWNERS;
+        if (extraOwners > 0) {
+            result.add(PriceAdjustment.computed(history.ownerCount().orElseThrow() + " previous owners",
+                    baseline.times(-EXTRA_OWNER_RATE * extraOwners), AdjustmentKind.HISTORY));
+        }
+        return result;
+    }
+
+    static double accidentRate(Severity severity) {
+        return switch (severity) {
+            case MINOR -> 0.02;
+            case MODERATE -> 0.04;
+            case SEVERE -> 0.08;
+        };
+    }
+
     /** Half the relative interquartile range of the adjusted prices, clamped; warns on a very spread market. */
     private static double rangeHalfWidth(List<Money> adjusted, List<String> warnings) {
         List<Double> sorted = adjusted.stream().map(Money::toDouble).sorted().toList();
@@ -179,11 +225,15 @@ public final class PricingEngine {
         return sorted.get(lo) + (sorted.get(hi) - sorted.get(lo)) * (pos - lo);
     }
 
-    static Confidence confidence(int comparables, boolean manualBaseline) {
+    /** Based on the evidence available; an incomplete vehicle history lowers it one level. */
+    static Confidence confidence(int comparables, boolean manualBaseline, boolean historyComplete) {
         if (manualBaseline || comparables < MIN_COMPARABLES) {
             return Confidence.LOW;
         }
-        return comparables >= HIGH_CONFIDENCE_COMPARABLES ? Confidence.HIGH : Confidence.MEDIUM;
+        if (comparables >= HIGH_CONFIDENCE_COMPARABLES) {
+            return historyComplete ? Confidence.HIGH : Confidence.MEDIUM;
+        }
+        return historyComplete ? Confidence.MEDIUM : Confidence.LOW;
     }
 
     /** F03 step 7: every value positive, ranges ordered, nothing implausibly far from the baseline. */

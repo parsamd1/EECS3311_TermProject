@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import avsa.domain.AccidentRecord;
 import avsa.domain.AdjustmentKind;
 import avsa.domain.BodyStyle;
 import avsa.domain.ComparableListing;
@@ -12,6 +13,8 @@ import avsa.domain.Confidence;
 import avsa.domain.Defect;
 import avsa.domain.DefectType;
 import avsa.domain.FuelType;
+import avsa.domain.HistorySourceType;
+import avsa.domain.LienStatus;
 import avsa.domain.Location;
 import avsa.domain.Money;
 import avsa.domain.PriceAdjustment;
@@ -21,6 +24,7 @@ import avsa.domain.PricingParameters;
 import avsa.domain.Severity;
 import avsa.domain.StrategyType;
 import avsa.domain.Transmission;
+import avsa.domain.VehicleHistory;
 import avsa.domain.VehicleProfile;
 import java.time.Clock;
 import java.time.Instant;
@@ -55,7 +59,17 @@ class PricingEngineTest {
     }
 
     private PriceRecommendation price(VehicleProfile profile, List<ComparableListing> comps, StrategyType type) {
-        return engine.recommend(new PricingInput(profile, comps, params), PricingStrategy.of(type));
+        return engine.recommend(new PricingInput(profile, comps, params).withHistory(cleanHistory()),
+                PricingStrategy.of(type));
+    }
+
+    private static VehicleHistory history(int owners, boolean accidentsKnown, List<AccidentRecord> accidents) {
+        return new VehicleHistory(null, owners, 1, LienStatus.NONE, List.of("Ontario"), HistorySourceType.MANUAL,
+                accidentsKnown, accidents, List.of());
+    }
+
+    private static VehicleHistory cleanHistory() {
+        return history(2, true, List.of());
     }
 
     @Test
@@ -114,6 +128,46 @@ class PricingEngineTest {
         assertEquals(List.of(Money.cad(-1_000), Money.cad(-500)), deductions, "4% of 25,000; repair estimate");
         // value 23,500 x 0.95 = 22,325 +/- 2%
         assertEquals(new PriceRange(Money.cad(21_900), Money.cad(22_800)), rec.retail());
+    }
+
+    @Test
+    void accidentsAndExtraOwnersAreDeducted() {
+        VehicleHistory h = history(4, true, List.of(new AccidentRecord(null, Severity.SEVERE, "front"),
+                new AccidentRecord(null, null, "unknown severity")));
+        PriceRecommendation rec = engine.recommend(
+                new PricingInput(car().build(), sameComps(5, 25_000), params).withHistory(h), new MaxProfitStrategy());
+        List<Money> deductions = rec.adjustments().stream()
+                .filter(a -> a.kind() == AdjustmentKind.HISTORY).map(PriceAdjustment::amount).toList();
+        assertEquals(List.of(Money.cad(-2_000), Money.cad(-1_000), Money.cad(-500)), deductions,
+                "8% severe; 4% when severity is not stated; 1% for each of 2 owners beyond the second");
+    }
+
+    @Test
+    void cleanHistoryHasNoDeduction() {
+        PriceRecommendation rec = price(car().build(), sameComps(5, 25_000), StrategyType.MAX_PROFIT);
+        assertTrue(rec.adjustments().isEmpty());
+    }
+
+    @Test
+    void missingHistoryIsNeutralButLowersConfidence() {
+        PriceRecommendation none = engine.recommend(new PricingInput(car().build(), sameComps(5, 25_000), params),
+                new MaxProfitStrategy());
+        assertEquals(Confidence.LOW, none.confidence());
+        assertEquals(Money.cad(25_000), none.baseline());
+        assertTrue(none.adjustments().isEmpty());
+        assertTrue(none.assumptions().stream().anyMatch(a -> a.startsWith("No vehicle history")));
+
+        PriceRecommendation many = engine.recommend(new PricingInput(car().build(), sameComps(8, 25_000), params),
+                new MaxProfitStrategy());
+        assertEquals(Confidence.MEDIUM, many.confidence());
+    }
+
+    @Test
+    void unknownAccidentHistoryLowersConfidence() {
+        PriceRecommendation rec = engine.recommend(new PricingInput(car().build(), sameComps(8, 25_000), params)
+                .withHistory(history(1, false, List.of())), new MaxProfitStrategy());
+        assertEquals(Confidence.MEDIUM, rec.confidence());
+        assertTrue(rec.assumptions().stream().anyMatch(a -> a.startsWith("Accident history is unknown")));
     }
 
     @Test

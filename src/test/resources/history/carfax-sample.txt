@@ -1,0 +1,33 @@
+SAMPLE FIXTURE - made-up data in the layout of a CARFAX Canada report.
+CARFAX Canada Vehicle History Report
+Page 1 of 6
+Vehicle History Report + Lien Check # 00000000
+Report Date: January 1, 2026
+Report Status: Complete
+2020 EXAMPLE MODEL BASE
+Sport utility vehicle | 4 Cylinders | Gas
+1M8GDM9AXKP042788
+Last Reported Odometer: n/a
+No Accident/Damage Records Found Last Registered In:
+Ontario (Normal)
+3 Service Records Found
+LIEN CHECK
+Lien Record(s) Found
+Lien Record(s) found in Ontario.
+No lien records found in Quebec.
+This vehicle has been registered in the following locations in Canada (listed oldest to newest):
+• In the province of Quebec with Normal branding.
+• In the province of Ontario with Normal branding.
+2021 Mar 3 Motor Vehicle Dept.
+First Owner Reported
+2023 May 9 Motor Vehicle Dept.
+New Owner reported
+2024 Jun 1 40,250 KM Example Dealer Service
+Toronto, Ontario, Canada
+2025 Jul 2 52,100 KM Example Inspection Centre
+VIN 1M8GDM9AXKP042788
+DEBTOR NAME:
+ TEST DEBTOR
+ 1 EXAMPLE STREET TORONTO ON A1A 1A1
+SECURED PARTY:
+ EXAMPLE BANK
