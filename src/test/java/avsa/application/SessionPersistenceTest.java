@@ -15,10 +15,15 @@ import avsa.domain.ConditionReport;
 import avsa.domain.Defect;
 import avsa.domain.DefectType;
 import avsa.domain.DepreciationForecast;
+import avsa.domain.FlagCode;
 import avsa.domain.FuelType;
 import avsa.domain.HistorySourceType;
 import avsa.domain.LienStatus;
+import avsa.domain.ListingAccidentStatus;
+import avsa.domain.ListingFlag;
 import avsa.domain.Location;
+import avsa.domain.MarketSnapshot;
+import avsa.domain.MarketStats;
 import avsa.domain.MaintenanceRecord;
 import avsa.domain.Money;
 import avsa.domain.Offer;
@@ -26,9 +31,11 @@ import avsa.domain.OfferEvaluation;
 import avsa.domain.OfferVerdict;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
+import avsa.domain.ScoreBreakdown;
 import avsa.domain.Segment;
 import avsa.domain.Session;
 import avsa.domain.Severity;
+import avsa.domain.SnapshotComparison;
 import avsa.domain.StrategyType;
 import avsa.domain.Transmission;
 import avsa.domain.VehicleHistory;
@@ -151,6 +158,59 @@ class SessionPersistenceTest {
         assertEquals(OfferVerdict.LOW_BALL, le.verdict());
         assertEquals("Dealer said high km", le.offer().notes());
         assertEquals(evaluation.counterAmount(), le.counterAmount());
+    }
+
+    private static MarketSnapshot snapshot(UUID profileId, long... prices) {
+        List<ComparableListing> listings = new ArrayList<>();
+        for (long price : prices) {
+            ComparableListing l = new ComparableListing("id" + price, "Kijiji", 2022, "GS", 50_000, Money.cad(price), 12.5,
+                    "text", "https://example.test/" + price);
+            l.setBreakdown(new ScoreBreakdown(0.25, 0.3, 0.2, 0.1, 0.05, 0.05, 0));
+            l.setHistoryFacts(ListingAccidentStatus.REPORTED, false);
+            l.setReview(List.of(new ListingFlag(FlagCode.TRIM_MISMATCH, "Looks like a GT")));
+            listings.add(l);
+        }
+        return new MarketSnapshot(UUID.randomUUID(), profileId, CLOCK.instant(), "Seeded dataset", false, CLOCK.instant(),
+                100, false, 2, listings, MarketStats.of(listings), List.of("A warning"));
+    }
+
+    @Test
+    void marketSnapshotsSurviveASaveAndLoad() {
+        Session session = service.create(cx5());
+        session.addSnapshot(snapshot(session.activeProfile().id(), 28_000, 29_000));
+        service.saveCurrent();
+
+        MarketSnapshot loaded = new JsonSessionRepository(dir, new JsonMapper(), new SchemaMigrator())
+                .load(session.id()).latestSnapshot().orElseThrow();
+
+        assertEquals(session.latestSnapshot().orElseThrow().id(), loaded.id());
+        assertEquals("Seeded dataset", loaded.sourceName());
+        assertEquals(2, loaded.skippedRecords());
+        assertEquals(Money.cad(28_500), loaded.stats().median());
+        assertEquals(List.of("A warning"), loaded.warnings());
+        ComparableListing l = loaded.rankedListings().get(0);
+        assertEquals(0.95, l.score(), 1e-9);
+        assertEquals(0.05, l.breakdown().orElseThrow().history(), 1e-9);
+        assertEquals(FlagCode.TRIM_MISMATCH, l.flags().get(0).code());
+        assertEquals(ListingAccidentStatus.REPORTED, l.accidentStatus());
+        assertTrue(l.reviewed());
+    }
+
+    @Test
+    void comparesTwoSnapshotsOfTheCurrentSession() {
+        Session session = service.create(cx5());
+        MarketSnapshot first = snapshot(session.activeProfile().id(), 28_000, 29_000);
+        MarketSnapshot second = snapshot(session.activeProfile().id(), 29_000, 30_000, 31_000);
+        session.addSnapshot(first);
+        session.addSnapshot(second);
+
+        SnapshotComparison c = service.compare(first.id(), second.id());
+
+        assertEquals(Money.cad(1_500), c.medianChange());
+        assertEquals(1, c.countChange());
+        assertEquals(List.of("id30000", "id31000"), c.addedListings());
+        assertEquals(List.of("id28000"), c.removedListings());
+        assertThrows(IllegalArgumentException.class, () -> service.compare(first.id(), UUID.randomUUID()));
     }
 
     @Test

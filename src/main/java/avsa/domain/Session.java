@@ -26,6 +26,7 @@ public final class Session {
     private UUID activePriceId;
     private DepreciationForecast forecast;
     private List<OfferEvaluation> offerLog = new ArrayList<>();
+    private List<MarketSnapshot> snapshots = new ArrayList<>();
 
     public Session(UUID id, String name, VehicleProfile profile, Instant lastModified) {
         this.id = Objects.requireNonNull(id);
@@ -44,6 +45,11 @@ public final class Session {
     public List<PriceRecommendation> priceHistory() { return List.copyOf(priceHistory); }
     public Optional<DepreciationForecast> forecast() { return Optional.ofNullable(forecast); }
     public List<OfferEvaluation> offerLog() { return List.copyOf(offerLog); }
+    public List<MarketSnapshot> snapshots() { return List.copyOf(snapshots); }
+
+    public Optional<MarketSnapshot> latestSnapshot() {
+        return snapshots.isEmpty() ? Optional.empty() : Optional.of(snapshots.get(snapshots.size() - 1));
+    }
 
     public Optional<PriceRecommendation> activePrice() {
         return priceHistory.stream().filter(p -> p.id().equals(activePriceId)).findFirst();
@@ -66,6 +72,7 @@ public final class Session {
 
     public void setForecast(DepreciationForecast newForecast) { this.forecast = newForecast; }
     public void addOffer(OfferEvaluation evaluation) { offerLog.add(evaluation); }
+    public void addSnapshot(MarketSnapshot snapshot) { snapshots.add(snapshot); }
 
     /** A copy under a new id and name that shares this session's results. */
     public Session copyAs(UUID newId, String newName, Instant when) {
@@ -75,6 +82,7 @@ public final class Session {
         copy.activePriceId = activePriceId;
         copy.forecast = forecast;
         copy.offerLog = new ArrayList<>(offerLog);
+        copy.snapshots = new ArrayList<>(snapshots);
         return copy;
     }
 }

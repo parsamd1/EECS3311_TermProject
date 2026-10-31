@@ -1,6 +1,8 @@
 package avsa.domain;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A similar vehicle for sale (F02). Pricing (F03) uses its asking price,
@@ -20,6 +22,11 @@ public final class ComparableListing {
     private double score = 1.0;
     private boolean pinned;
     private boolean excluded;
+    private boolean reviewed;
+    private ScoreBreakdown breakdown;
+    private List<ListingFlag> flags = List.of();
+    private ListingAccidentStatus accidentStatus = ListingAccidentStatus.UNKNOWN;
+    private boolean brandedTitle;
 
     public ComparableListing(String listingId, String source, int year, String trim, int odometerKm,
                              Money askingPrice, double distanceKm, String description, String url) {
@@ -48,6 +55,13 @@ public final class ComparableListing {
     public double score() { return score; }
     public boolean pinned() { return pinned; }
     public boolean excluded() { return excluded; }
+    /** False until the AI review has read this listing. */
+    public boolean reviewed() { return reviewed; }
+    public Optional<ScoreBreakdown> breakdown() { return Optional.ofNullable(breakdown); }
+    public List<ListingFlag> flags() { return flags; }
+    public ListingAccidentStatus accidentStatus() { return accidentStatus; }
+    /** True when the title is reported as salvage, rebuilt or similar. */
+    public boolean brandedTitle() { return brandedTitle; }
 
     public void setScore(double score) {
         if (score < 0 || score > 1) {
@@ -58,4 +72,19 @@ public final class ComparableListing {
 
     public void setPinned(boolean pinned) { this.pinned = pinned; }
     public void setExcluded(boolean excluded) { this.excluded = excluded; }
+
+    public void setBreakdown(ScoreBreakdown newBreakdown) {
+        this.breakdown = Objects.requireNonNull(newBreakdown);
+        setScore(newBreakdown.total());
+    }
+
+    public void setReview(List<ListingFlag> newFlags) {
+        this.flags = List.copyOf(newFlags);
+        this.reviewed = true;
+    }
+
+    public void setHistoryFacts(ListingAccidentStatus status, boolean branded) {
+        this.accidentStatus = Objects.requireNonNull(status);
+        this.brandedTitle = branded;
+    }
 }

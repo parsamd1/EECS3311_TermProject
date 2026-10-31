@@ -1,7 +1,9 @@
 package avsa.application;
 
+import avsa.domain.MarketSnapshot;
 import avsa.domain.Session;
 import avsa.domain.SessionSummary;
+import avsa.domain.SnapshotComparison;
 import avsa.domain.VehicleProfile;
 import avsa.infrastructure.SessionRepository;
 import java.time.Clock;
@@ -87,6 +89,16 @@ public final class SessionService {
         if (current != null && current.id().equals(id)) {
             current = null;
         }
+    }
+
+    /** Compares two market snapshots of the current session. */
+    public SnapshotComparison compare(UUID first, UUID second) {
+        return SnapshotComparison.of(snapshot(first), snapshot(second));
+    }
+
+    private MarketSnapshot snapshot(UUID id) {
+        return current().snapshots().stream().filter(s -> s.id().equals(id)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("No market snapshot with id " + id));
     }
 
     /** True while a disk error is keeping data in memory; the seller should be warned. */
