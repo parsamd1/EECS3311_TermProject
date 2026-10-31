@@ -4,6 +4,7 @@ import avsa.domain.Session;
 import avsa.domain.SessionSummary;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.exc.InvalidDefinitionException;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -89,6 +90,9 @@ public final class JsonSessionRepository implements SessionRepository {
                 session.markReadOnly();
             }
             return session;
+        } catch (InvalidDefinitionException e) {
+            // The program cannot map this type at all, so the file is not at fault: leave it in place.
+            throw new IllegalStateException("Session data classes cannot be read by this build.", e);
         } catch (JsonProcessingException | RuntimeException e) {
             throw corrupt(file, e);
         }

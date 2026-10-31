@@ -172,9 +172,9 @@ public final class PricingEngine {
 
     static double severityRate(Severity severity) {
         return switch (severity) {
-            case MINOR -> 0.005;
-            case MODERATE -> 0.015;
-            case SEVERE -> 0.04;
+            case MINOR -> 0.01;
+            case MODERATE -> 0.025;
+            case SEVERE -> 0.05;
         };
     }
 
@@ -199,9 +199,9 @@ public final class PricingEngine {
 
     static double accidentRate(Severity severity) {
         return switch (severity) {
-            case MINOR -> 0.02;
-            case MODERATE -> 0.04;
-            case SEVERE -> 0.08;
+            case MINOR -> 0.03;
+            case MODERATE -> 0.06;
+            case SEVERE -> 0.10;
         };
     }
 

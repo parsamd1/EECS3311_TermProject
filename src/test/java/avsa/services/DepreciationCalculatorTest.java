@@ -67,6 +67,15 @@ class DepreciationCalculatorTest {
     }
 
     @Test
+    void netForAnyWaitingPeriodMatchesTheForecastPoints() {
+        DepreciationForecast f = calculator.forecast(cx5(150));
+        assertEquals(f.pointAt(3).orElseThrow().netIfSoldThen(), f.netIfSoldAfter(3));
+        assertEquals(Money.cad(28_500), f.netIfSoldAfter(0));
+        assertTrue(f.netIfSoldAfter(1.5).compareTo(f.netIfSoldAfter(1)) < 0);
+        assertTrue(f.netIfSoldAfter(1.5).compareTo(f.netIfSoldAfter(3)) > 0);
+    }
+
+    @Test
     void noBreakEvenWhenWaitingStaysWorthIt() {
         assertFalse(calculator.forecast(cx5(0)).breakEvenMonth().isPresent());
     }
@@ -91,7 +100,7 @@ class DepreciationCalculatorTest {
         DepreciationForecast f = calculator.forecast(
                 new ForecastInput(Money.cad(5_000), 2000, Segment.ECONOMY, TODAY, null, Money.cad(4_000)));
         assertTrue(f.warnings().get(0).contains("older than the rate table covers"));
-        assertEquals(new RateBand(0.04, 0.08), DepreciationRateTable.builtIn().bandFor(Segment.ECONOMY, 26));
+        assertEquals(new RateBand(0.06, 0.10), DepreciationRateTable.builtIn().bandFor(Segment.ECONOMY, 26));
     }
 
     @Test

@@ -66,7 +66,7 @@ public final class DepreciationCalculator {
             }
         }
         return new DepreciationForecast(p, segment, input.monthlyHoldingCost(), input.wholesaleToday(),
-                points, breakEven, warnings);
+                points, breakEven, warnings, fastMonthly, slowMonthly);
     }
 
     /** Projects {@code P x (1 - m)^t} at the fast (low value) and slow (high value) monthly rates. */

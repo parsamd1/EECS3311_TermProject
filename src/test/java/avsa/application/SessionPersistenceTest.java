@@ -44,6 +44,11 @@ import avsa.services.OfferEvaluator;
 import avsa.services.PricingEngine;
 import avsa.services.PricingInput;
 import avsa.services.QuickSaleStrategy;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.exc.InvalidDefinitionException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -210,6 +215,22 @@ class SessionPersistenceTest {
         Files.writeString(dir.resolve(id + ".json"), "{\"schemaVersion\": 1, \"name\": \"no profile\"}");
         assertThrows(SessionLoadException.class, () -> repository.load(id));
         assertEquals(1, repository.quarantined().size());
+    }
+
+    @Test
+    void aProgramProblemDoesNotQuarantineAValidFile() {
+        Session session = service.create(cx5());
+        JsonMapper broken = new JsonMapper() {
+            @Override
+            public <T> T fromTree(JsonNode tree, Class<T> type) throws JsonProcessingException {
+                throw InvalidDefinitionException.from((JsonParser) null, "no creator", (JavaType) null);
+            }
+        };
+        JsonSessionRepository repo = new JsonSessionRepository(dir, broken, new SchemaMigrator());
+
+        assertThrows(IllegalStateException.class, () -> repo.load(session.id()));
+        assertTrue(repo.quarantined().isEmpty());
+        assertTrue(Files.exists(dir.resolve(session.id() + ".json")), "the file stays in place");
     }
 
     @Test

@@ -104,9 +104,9 @@ class PricingEngineTest {
         List<ComparableListing> comps = List.of(comp("a", 25_000, 100_000), comp("b", 25_000, 100_000),
                 comp("c", 25_000, 100_000));
         PriceRecommendation rec = price(car().build(), comps, StrategyType.MAX_PROFIT);
-        assertEquals(Money.cad(26_000), rec.baseline());
+        assertEquals(Money.cad(26_400), rec.baseline());
         assertEquals(AdjustmentKind.ODOMETER, rec.adjustments().get(0).kind());
-        assertEquals(Money.cad(1_000), rec.adjustments().get(0).amount());
+        assertEquals(Money.cad(1_400), rec.adjustments().get(0).amount());
     }
 
     @Test
@@ -125,9 +125,9 @@ class PricingEngineTest {
                 StrategyType.MAX_PROFIT);
         List<Money> deductions = rec.adjustments().stream()
                 .filter(a -> a.kind() == AdjustmentKind.CONDITION).map(PriceAdjustment::amount).toList();
-        assertEquals(List.of(Money.cad(-1_000), Money.cad(-500)), deductions, "4% of 25,000; repair estimate");
-        // value 23,500 x 0.95 = 22,325 +/- 2%
-        assertEquals(new PriceRange(Money.cad(21_900), Money.cad(22_800)), rec.retail());
+        assertEquals(List.of(Money.cad(-1_250), Money.cad(-500)), deductions, "5% of 25,000; repair estimate");
+        // value 23,250 x 0.95 = 22,087.50 +/- 2%
+        assertEquals(new PriceRange(Money.cad(21_600), Money.cad(22_500)), rec.retail());
     }
 
     @Test
@@ -138,8 +138,8 @@ class PricingEngineTest {
                 new PricingInput(car().build(), sameComps(5, 25_000), params).withHistory(h), new MaxProfitStrategy());
         List<Money> deductions = rec.adjustments().stream()
                 .filter(a -> a.kind() == AdjustmentKind.HISTORY).map(PriceAdjustment::amount).toList();
-        assertEquals(List.of(Money.cad(-2_000), Money.cad(-1_000), Money.cad(-500)), deductions,
-                "8% severe; 4% when severity is not stated; 1% for each of 2 owners beyond the second");
+        assertEquals(List.of(Money.cad(-2_500), Money.cad(-1_500), Money.cad(-500)), deductions,
+                "10% severe; 6% when severity is not stated; 1% for each of 2 owners beyond the second");
     }
 
     @Test

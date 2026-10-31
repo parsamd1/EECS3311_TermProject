@@ -1,23 +1,28 @@
 package avsa.services;
 
 import avsa.domain.DepreciationForecast;
-import avsa.domain.ForecastPoint;
 import avsa.domain.Money;
 import avsa.domain.Offer;
 import avsa.domain.OfferEvaluation;
 import avsa.domain.OfferVerdict;
 import avsa.domain.PriceRange;
 import avsa.domain.PriceRecommendation;
+import java.time.Instant;
+import java.time.Month;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Judges an offer against the wholesale range with fixed rules (F11).
  */
 public final class OfferEvaluator {
 
-    /** Assumed time to find a private buyer when comparing an offer with waiting for retail. */
-    static final int EXPECTED_MONTHS_TO_SELL_PRIVATELY = 3;
+    /** Author's market research: typical time to find a private buyer in Canada, and longer in winter. */
+    static final double EXPECTED_MONTHS_TO_SELL_PRIVATELY = 1.0;
+    static final double EXPECTED_MONTHS_TO_SELL_PRIVATELY_IN_WINTER = 1.5;
+    private static final Set<Month> WINTER = Set.of(Month.DECEMBER, Month.JANUARY, Month.FEBRUARY, Month.MARCH);
 
     /**
      * @param forecast may be null; without it no take-now-versus-wait comparison is made
@@ -39,12 +44,16 @@ public final class OfferEvaluator {
         }
         Money netIfWaiting = null;
         if (forecast != null) {
-            netIfWaiting = forecast.pointAt(EXPECTED_MONTHS_TO_SELL_PRIVATELY)
-                    .map(ForecastPoint::netIfSoldThen).orElse(null);
+            netIfWaiting = forecast.netIfSoldAfter(expectedMonthsToSell(offer.receivedAt()));
         }
         return new OfferEvaluation(offer, verdict, wholesale.positionOf(amount), wholesale.high().minus(amount),
                 counter(verdict, amount, wholesale), netIfWaiting,
                 amount.compareTo(rec.walkAwayFloor()) < 0, aboveRetail, warnings);
+    }
+
+    static double expectedMonthsToSell(Instant when) {
+        Month month = when.atZone(ZoneId.systemDefault()).getMonth();
+        return WINTER.contains(month) ? EXPECTED_MONTHS_TO_SELL_PRIVATELY_IN_WINTER : EXPECTED_MONTHS_TO_SELL_PRIVATELY;
     }
 
     /** Below the range, lower half, upper half (midpoint included), above the range. */

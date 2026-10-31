@@ -1,28 +1,33 @@
 # Annual depreciation rate bands by segment and vehicle age (years).
 # Estimates for the Canadian used-vehicle market; edit to tune F06 forecasts.
+# Compared with the author's all-vehicle market figures (year 1: 18-20%, years 2-3: ~12%,
+# years 4-5: ~10%, year 6+: ~8%): the segment averages agree except at age 11-15, which now
+# uses the age 7-10 rates so that the average is about 8%.
+# Cross-checks: AutoTrader.ca (about 20% in year one, then 10-15% a year) and the iSeeCars 2026
+# study (US data, 41.8% average five-year loss, SUVs 44.9%). The bands themselves are estimates.
 # segment,min_age,max_age,annual_low,annual_high
 ECONOMY,0,1,0.15,0.20
 ECONOMY,2,3,0.10,0.15
 ECONOMY,4,6,0.08,0.12
 ECONOMY,7,10,0.06,0.10
-ECONOMY,11,15,0.04,0.08
+ECONOMY,11,15,0.06,0.10
 SUV,0,1,0.13,0.18
 SUV,2,3,0.09,0.13
 SUV,4,6,0.07,0.11
 SUV,7,10,0.06,0.09
-SUV,11,15,0.04,0.07
+SUV,11,15,0.06,0.09
 TRUCK,0,1,0.12,0.16
 TRUCK,2,3,0.08,0.12
 TRUCK,4,6,0.06,0.10
 TRUCK,7,10,0.05,0.08
-TRUCK,11,15,0.04,0.07
+TRUCK,11,15,0.05,0.08
 LUXURY,0,1,0.20,0.25
 LUXURY,2,3,0.13,0.18
 LUXURY,4,6,0.10,0.14
 LUXURY,7,10,0.07,0.11
-LUXURY,11,15,0.05,0.09
+LUXURY,11,15,0.07,0.11
 EV,0,1,0.20,0.28
 EV,2,3,0.14,0.20
 EV,4,6,0.10,0.15
 EV,7,10,0.08,0.12
-EV,11,15,0.06,0.10
+EV,11,15,0.08,0.12

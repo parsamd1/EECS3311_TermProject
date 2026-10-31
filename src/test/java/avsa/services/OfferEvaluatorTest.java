@@ -111,8 +111,13 @@ class OfferEvaluatorTest {
                 new ForecastInput(Money.cad(28_500), 2022, Segment.SUV, LocalDate.of(2026, 10, 29),
                         Money.cad(150), Money.cad(24_500)));
         OfferEvaluation e = evaluate(24_600, forecast);
-        assertEquals(forecast.pointAt(3).orElseThrow().netIfSoldThen(), e.netIfWaiting().orElseThrow());
+        assertEquals(forecast.netIfSoldAfter(1), e.netIfWaiting().orElseThrow(), "one month outside winter");
         assertTrue(evaluate(24_600).netIfWaiting().isEmpty());
+
+        Offer winterOffer = new Offer(Money.cad(24_600), BuyerType.DEALER, "", Instant.parse("2027-01-15T12:00:00Z"));
+        assertEquals(forecast.netIfSoldAfter(1.5),
+                evaluator.evaluate(winterOffer, authorsCar(), forecast).netIfWaiting().orElseThrow(),
+                "a month and a half in winter");
     }
 
     @Test

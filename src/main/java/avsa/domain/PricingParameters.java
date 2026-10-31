@@ -17,10 +17,10 @@ public record PricingParameters(double negotiationMargin, double dealerSpread, d
 
     /** Calibrated from the author's dealer offers: $23.5-25.5k against a $28-29k retail value (Stage 1, 1.7). */
     public static final double DEFAULT_DEALER_SPREAD = 0.14;
-    /** Assumption, user-tunable: typical gap between asking and selling price. */
+    /** Author's market research (usual range 3-10%), user-tunable: typical gap between asking and selling price. */
     public static final double DEFAULT_NEGOTIATION_MARGIN = 0.05;
-    /** Assumption, user-tunable: value of one kilometre of odometer difference. */
-    public static final double DEFAULT_ODOMETER_ADJUSTMENT_PER_KM = 0.05;
+    /** Author's market research, user-tunable: value of one kilometre of odometer difference. */
+    public static final double DEFAULT_ODOMETER_ADJUSTMENT_PER_KM = 0.07;
 
     public static PricingParameters defaults() {
         return new PricingParameters(DEFAULT_NEGOTIATION_MARGIN, DEFAULT_DEALER_SPREAD,

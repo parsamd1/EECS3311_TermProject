@@ -14,9 +14,12 @@ public final class DepreciationForecast {
     private final List<ForecastPoint> points;
     private final Integer breakEvenMonth;
     private final List<String> warnings;
+    private final double fastMonthlyRate;
+    private final double slowMonthlyRate;
 
     public DepreciationForecast(Money referencePrice, Segment segment, Money monthlyHoldingCost, Money wholesaleToday,
-                                List<ForecastPoint> points, Integer breakEvenMonth, List<String> warnings) {
+                                List<ForecastPoint> points, Integer breakEvenMonth, List<String> warnings,
+                                double fastMonthlyRate, double slowMonthlyRate) {
         this.referencePrice = Objects.requireNonNull(referencePrice);
         this.segment = Objects.requireNonNull(segment);
         this.monthlyHoldingCost = Objects.requireNonNull(monthlyHoldingCost);
@@ -24,6 +27,8 @@ public final class DepreciationForecast {
         this.points = List.copyOf(points);
         this.breakEvenMonth = breakEvenMonth;
         this.warnings = List.copyOf(warnings);
+        this.fastMonthlyRate = fastMonthlyRate;
+        this.slowMonthlyRate = slowMonthlyRate;
     }
 
     public Money referencePrice() { return referencePrice; }
@@ -40,5 +45,12 @@ public final class DepreciationForecast {
 
     public Optional<ForecastPoint> pointAt(int months) {
         return points.stream().filter(p -> p.months() == months).findFirst();
+    }
+
+    /** What waiting this long, possibly a part of a month, is expected to net the seller after holding costs. */
+    public Money netIfSoldAfter(double months) {
+        Money low = referencePrice.times(Math.pow(1 - fastMonthlyRate, months));
+        Money high = referencePrice.times(Math.pow(1 - slowMonthlyRate, months));
+        return low.plus(high).times(0.5).minus(monthlyHoldingCost.times(months));
     }
 }
