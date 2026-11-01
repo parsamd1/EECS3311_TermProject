@@ -10,7 +10,7 @@ AVSA is an AI agent that helps private sellers in Canada sell a used vehicle at 
 
 - **JDK 21 or newer** (`java -version` to check).
 - An internet connection for the first build. Maven itself is downloaded automatically by the included wrapper (`./mvnw`), so it does not need to be installed.
-- An Anthropic API key for the AI features. The app uses Claude Haiku 4.5 by default.
+- An Anthropic API key for the AI features. The app uses Claude Haiku 5.5 by default.
 
 ### Local configuration (API key)
 

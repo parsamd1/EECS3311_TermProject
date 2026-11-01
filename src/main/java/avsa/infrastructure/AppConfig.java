@@ -19,7 +19,7 @@ public final class AppConfig {
 
     public static final String API_KEY = "ANTHROPIC_API_KEY";
     public static final String MODEL = "LLM_MODEL";
-    public static final String DEFAULT_MODEL = "claude-haiku-4-5";
+    public static final String DEFAULT_MODEL = "claude-haiku-5-5";
 
     /** Value shipped in .env.example; treated as "no key configured". */
     static final String PLACEHOLDER_KEY = "YOUR_LOCAL_API_KEY_HERE";

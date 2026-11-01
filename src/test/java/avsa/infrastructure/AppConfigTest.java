@@ -23,10 +23,10 @@ class AppConfigTest {
 
     @Test
     void readsKeyAndModelFromEnvFile() throws IOException {
-        Path env = envFile("ANTHROPIC_API_KEY=sk-test-1234", "LLM_MODEL=claude-haiku-4-5");
+        Path env = envFile("ANTHROPIC_API_KEY=sk-test-1234", "LLM_MODEL=claude-haiku-5-5");
         AppConfig config = AppConfig.load(env, Map.of());
         assertEquals("sk-test-1234", config.llmApiKey().orElseThrow());
-        assertEquals("claude-haiku-4-5", config.llmModelId());
+        assertEquals("claude-haiku-5-5", config.llmModelId());
     }
 
     @Test
@@ -35,9 +35,9 @@ class AppConfigTest {
                 "# a comment",
                 "",
                 "export ANTHROPIC_API_KEY=\"sk-quoted\"",
-                "LLM_MODEL='claude-haiku-4-5'",
+                "LLM_MODEL='claude-haiku-5-5'",
                 "not a key value line"));
-        assertEquals(Map.of("ANTHROPIC_API_KEY", "sk-quoted", "LLM_MODEL", "claude-haiku-4-5"), parsed);
+        assertEquals(Map.of("ANTHROPIC_API_KEY", "sk-quoted", "LLM_MODEL", "claude-haiku-5-5"), parsed);
     }
 
     @Test
