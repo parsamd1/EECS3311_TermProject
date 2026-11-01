@@ -17,6 +17,7 @@ import avsa.domain.DefectType;
 import avsa.domain.DepreciationForecast;
 import avsa.domain.FlagCode;
 import avsa.domain.FuelType;
+import avsa.domain.GeneratedListing;
 import avsa.domain.HistorySourceType;
 import avsa.domain.LienStatus;
 import avsa.domain.ListingAccidentStatus;
@@ -37,9 +38,13 @@ import avsa.domain.Session;
 import avsa.domain.Severity;
 import avsa.domain.SnapshotComparison;
 import avsa.domain.StrategyType;
+import avsa.domain.Tone;
 import avsa.domain.Transmission;
+import avsa.domain.ValidationReport;
+import avsa.domain.ValidationRule;
 import avsa.domain.VehicleHistory;
 import avsa.domain.VehicleProfile;
+import avsa.domain.Violation;
 import avsa.infrastructure.JsonMapper;
 import avsa.infrastructure.JsonSessionRepository;
 import avsa.infrastructure.SchemaMigrator;
@@ -194,6 +199,29 @@ class SessionPersistenceTest {
         assertEquals(FlagCode.TRIM_MISMATCH, l.flags().get(0).code());
         assertEquals(ListingAccidentStatus.REPORTED, l.accidentStatus());
         assertTrue(l.reviewed());
+    }
+
+    @Test
+    void listingsSurviveASaveAndLoad() {
+        Session session = service.create(cx5());
+        ValidationReport report = new ValidationReport(CLOCK.instant(),
+                List.of(new Violation(ValidationRule.BANNED_CLAIM, "Remove the claim \"flawless\".")));
+        session.addListing(new GeneratedListing("2022 Mazda CX-5", "Text", List.of("Winter tires"), List.of("Oil change"),
+                "Minor scratch.", Money.cad(29_500), List.of("cx-5"), Tone.FRIENDLY, true, false, true, report)
+                .withOverride());
+        service.saveCurrent();
+
+        GeneratedListing loaded = new JsonSessionRepository(dir, new JsonMapper(), new SchemaMigrator())
+                .load(session.id()).latestListing().orElseThrow();
+
+        assertEquals("2022 Mazda CX-5", loaded.title());
+        assertEquals(List.of("Oil change"), loaded.maintenanceDetails());
+        assertEquals(Money.cad(29_500), loaded.price());
+        assertEquals(Tone.FRIENDLY, loaded.tone());
+        assertTrue(loaded.templateFallback());
+        assertTrue(loaded.editedByUser());
+        assertTrue(loaded.isExportable(), "the override is kept");
+        assertEquals(ValidationRule.BANNED_CLAIM, loaded.report().orElseThrow().violations().get(0).rule());
     }
 
     @Test
