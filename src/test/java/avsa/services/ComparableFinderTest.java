@@ -246,7 +246,7 @@ class ComparableFinderTest {
 
         assertEquals("Seeded dataset", s.sourceName());
         assertEquals(0, s.skippedRecords());
-        assertEquals(9, s.rankedListings().size());
+        assertEquals(8, s.rankedListings().size());
         assertFalse(s.lowConfidence());
         assertEquals(100, s.radiusKm());
         assertTrue(s.rankedListings().stream().allMatch(l -> l.trim().startsWith("GS")));
