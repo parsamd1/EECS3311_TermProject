@@ -1,0 +1,23 @@
+[
+  {
+    "platform": "AUTOTRADER",
+    "fieldLimits": { "title": 80, "body": 4000 },
+    "requiredFields": ["title", "price", "description"],
+    "priceFormat": "$#,##0",
+    "lastVerified": null
+  },
+  {
+    "platform": "KIJIJI",
+    "fieldLimits": { "title": 64, "body": 4000 },
+    "requiredFields": ["title", "price", "description"],
+    "priceFormat": "$#,##0",
+    "lastVerified": null
+  },
+  {
+    "platform": "FACEBOOK_MARKETPLACE",
+    "fieldLimits": { "title": 100, "body": 5000 },
+    "requiredFields": ["title", "price", "description"],
+    "priceFormat": "$#,##0",
+    "lastVerified": null
+  }
+]

@@ -66,7 +66,7 @@ The full design report is **[Stage1_Report.md](Stage1_Report.md)**:
 | `src/test/java/avsa/` | Unit tests |
 | `pom.xml`, `mvnw` | Maven build and wrapper |
 | `.env.example` | Example configuration (no real keys) |
-| `config/` | Editable depreciation rates |
+| `config/` | Editable depreciation rates and marketplace posting limits |
 | `data/listings.csv` | Seeded dataset: real CX-5 listings collected from AutoTrader.ca and Kijiji |
 | `data/listings-template.csv` | Column headers for importing your own listings |
 | `Stage1_Report.md` | Stage 1 design report |
