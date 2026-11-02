@@ -47,6 +47,10 @@ public class JsonMapper {
         return mapper.readValue(file.toFile(), type);
     }
 
+    public <T> T fromJson(String json, Class<T> type) throws IOException {
+        return mapper.readValue(json, type);
+    }
+
     public JsonNode readTree(Path file) throws IOException {
         return mapper.readTree(file.toFile());
     }
