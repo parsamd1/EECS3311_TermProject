@@ -23,7 +23,7 @@ class MarketDataSourceTest {
 
     private static final Instant NOW = Instant.parse("2026-10-31T12:00:00Z");
     private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
-    private static final MarketQuery QUERY = new MarketQuery("Mazda", "CX-5", 2020, 2024);
+    private static final MarketQuery QUERY = new MarketQuery("Mazda", "CX-5", 2020, 2024, "Toronto", "ON");
     private static final Location TORONTO = new Location("Toronto", "ON", 43.6532, -79.3832);
 
     private static RawListing raw(String price) {
@@ -169,5 +169,7 @@ class MarketDataSourceTest {
         Gazetteer gazetteer = new Gazetteer();
         assertEquals("Toronto", gazetteer.resolve(" toronto ", "on").orElseThrow().city());
         assertTrue(gazetteer.resolve("Atlantis", "ON").isEmpty());
+        assertEquals("Toronto", gazetteer.resolve("City of Toronto", "ON").orElseThrow().city(), "Kijiji's wording");
+        assertTrue(gazetteer.resolve("Town of Ajax", "ON").isPresent());
     }
 }

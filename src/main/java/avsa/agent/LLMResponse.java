@@ -6,10 +6,16 @@ import java.util.Set;
 /**
  * The model's answer.
  *
- * @param sourceUrls pages the model's web searches returned or cited; empty without web search
+ * @param sourceUrls pages the model's web searches returned, fetched or cited; empty without web search
  */
 public record LLMResponse(String text, Set<String> sourceUrls, long inputTokens, long outputTokens, long webSearches,
                           String stopReason) {
+
+    /** Stop reason, token counts and searches, for the trace and cost reporting. */
+    public String usageSummary() {
+        return "stop: " + stopReason + ", input tokens: " + inputTokens + ", output tokens: " + outputTokens
+                + ", web searches: " + webSearches + ", sources: " + sourceUrls.size();
+    }
 
     public LLMResponse {
         Objects.requireNonNull(text, "text");

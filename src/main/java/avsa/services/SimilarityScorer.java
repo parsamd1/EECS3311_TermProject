@@ -56,7 +56,7 @@ public final class SimilarityScorer {
     public ScoreBreakdown score(VehicleProfile profile, VehicleHistory history, ComparableListing listing) {
         double year = Math.max(0, 1 - YEAR_STEP * Math.abs(listing.year() - profile.year()));
         double odometer = Math.max(0, 1 - Math.abs(listing.odometerKm() - profile.odometerKm()) / ODOMETER_RANGE_KM);
-        double distance = Math.max(0, 1 - listing.distanceKm() / DISTANCE_RANGE_KM);
+        double distance = listing.locationApproximate() ? NEUTRAL : Math.max(0, 1 - listing.distanceKm() / DISTANCE_RANGE_KM);
         return new ScoreBreakdown(weights.year() * year, weights.odometer() * odometer,
                 weights.trim() * trimRating(profile.trim(), listing.trim()), weights.distance() * distance,
                 weights.condition() * conditionRating(listing), weights.history() * historyRating(history, listing), 0);

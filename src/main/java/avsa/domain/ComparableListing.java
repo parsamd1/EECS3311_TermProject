@@ -27,6 +27,7 @@ public final class ComparableListing {
     private List<ListingFlag> flags = List.of();
     private ListingAccidentStatus accidentStatus = ListingAccidentStatus.UNKNOWN;
     private boolean brandedTitle;
+    private boolean locationApproximate;
 
     public ComparableListing(String listingId, String source, int year, String trim, int odometerKm,
                              Money askingPrice, double distanceKm, String description, String url) {
@@ -62,6 +63,8 @@ public final class ComparableListing {
     public ListingAccidentStatus accidentStatus() { return accidentStatus; }
     /** True when the title is reported as salvage, rebuilt or similar. */
     public boolean brandedTitle() { return brandedTitle; }
+    /** True when the listing did not give its city, so its distance is only an estimate. */
+    public boolean locationApproximate() { return locationApproximate; }
 
     public void setScore(double score) {
         if (score < 0 || score > 1) {
@@ -81,6 +84,10 @@ public final class ComparableListing {
     public void setReview(List<ListingFlag> newFlags) {
         this.flags = List.copyOf(newFlags);
         this.reviewed = true;
+    }
+
+    public void setLocationApproximate(boolean approximate) {
+        this.locationApproximate = approximate;
     }
 
     public void setHistoryFacts(ListingAccidentStatus status, boolean branded) {

@@ -153,7 +153,7 @@ class ComparableFinderTest {
                 "too,few,columns\n");
         assertEquals(3, s.rankedListings().size());
         assertEquals(4, s.skippedRecords());
-        assertTrue(s.warnings().get(0).startsWith("4 malformed"));
+        assertTrue(s.warnings().get(0).startsWith("4 listing records were skipped"));
     }
 
     @Test
@@ -227,6 +227,38 @@ class ComparableFinderTest {
         assertEquals(3, s.rankedListings().size());
         assertEquals(100, s.radiusKm());
         assertTrue(s.warnings().isEmpty(), () -> s.warnings().toString());
+    }
+
+    @Test
+    void theSourceIsSearchedOnceEvenWhenTheSearchWidens() throws IOException {
+        Path csv = Files.writeString(dir.resolve("w.csv"), HEADER + row("a", 2022, "GS", 50_000, 28_000, "Toronto")
+                + row("b", 2019, "GS", 50_000, 24_000, "Toronto") + row("c", 2025, "GS", 50_000, 33_000, "Toronto"));
+        int[] searches = {0};
+        SeededDatasetSource seeded = new SeededDatasetSource(csv, CLOCK);
+        MarketDataSource counting = new MarketDataSource() {
+            public String name() { return "Counting"; }
+            public boolean isAvailable() { return true; }
+            public avsa.infrastructure.market.MarketSearchResult search(avsa.infrastructure.market.MarketQuery q) {
+                searches[0]++;
+                return seeded.search(q);
+            }
+        };
+        MarketSnapshot s = finder(counting).find(cx5(), SearchRequest.defaults());
+        assertEquals(1, searches[0]);
+        assertEquals(3, s.rankedListings().size(), "found after widening the years to +/-3");
+        assertTrue(s.warnings().stream().anyMatch(w -> w.contains("model years +/-3")), () -> s.warnings().toString());
+    }
+
+    @Test
+    void aListingWithAnAssumedLocationGetsANeutralDistanceScore() {
+        ListingNormalizer normalizer = new ListingNormalizer(new Gazetteer());
+        Location toronto = new Location("Toronto", "ON", 43.6532, -79.3832);
+        avsa.infrastructure.market.RawListing assumed = new avsa.infrastructure.market.RawListing("Kijiji",
+                "https://example.test/x", "", "Mazda", "CX-5", "2022", "GS", "50000", "28000", "Toronto", "ON", "", "",
+                "", true);
+        ComparableListing listing = normalizer.normalize(assumed, toronto).orElseThrow();
+        assertTrue(listing.locationApproximate());
+        assertEquals(0.10 * SimilarityScorer.NEUTRAL, new SimilarityScorer().score(cx5(), null, listing).distance(), 1e-9);
     }
 
     @Test

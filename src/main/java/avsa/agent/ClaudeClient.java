@@ -10,12 +10,16 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.TextCitation;
 import com.anthropic.models.messages.UserLocation;
+import com.anthropic.models.messages.WebFetchTool20250910;
 import com.anthropic.models.messages.WebSearchResultBlock;
 import com.anthropic.models.messages.WebSearchTool20250305;
+import java.net.URI;
 import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Calls Claude through the official Anthropic Java SDK. */
 public final class ClaudeClient implements LLMClient {
@@ -49,7 +53,16 @@ public final class ClaudeClient implements LLMClient {
                 .maxTokens(request.maxTokens())
                 .system(request.system())
                 .addUserMessage(request.user());
-        request.webSearchOptions().ifPresent(options -> params.addTool(webSearchTool(options)));
+        request.webSearchOptions().ifPresent(options -> {
+            params.addTool(webSearchTool(options));
+            if (options.maxFetches() > 0) {
+                params.addTool(WebFetchTool20250910.builder()
+                        .maxUses((long) options.maxFetches())
+                        .allowedDomains(options.allowedDomains())
+                        .maxContentTokens((long) options.maxFetchTokens())
+                        .build());
+            }
+        });
 
         StringBuilder text = new StringBuilder();
         Set<String> sources = new LinkedHashSet<>();
@@ -88,7 +101,29 @@ public final class ClaudeClient implements LLMClient {
                 .build();
     }
 
-    /** Text from every text block, and every URL that a search returned or a citation points to. */
+    private static final Pattern ABSOLUTE_LINK = Pattern.compile("https?://[^\\s)\"'<>\\]]+");
+    private static final Pattern RELATIVE_LINK = Pattern.compile("\\]\\((/[^\\s)]+)\\)|href=\"(/[^\"]+)\"");
+
+    /**
+     * The links on a fetched page. A results page links to the listings it shows, so a listing found there
+     * counts as coming from the page.
+     */
+    static Set<String> linksIn(String pageUrl, String text) {
+        Set<String> links = new LinkedHashSet<>();
+        Matcher absolute = ABSOLUTE_LINK.matcher(text);
+        while (absolute.find()) {
+            links.add(absolute.group());
+        }
+        URI page = URI.create(pageUrl);
+        Matcher relative = RELATIVE_LINK.matcher(text);
+        while (relative.find()) {
+            String path = relative.group(1) != null ? relative.group(1) : relative.group(2);
+            links.add(page.getScheme() + "://" + page.getHost() + path);
+        }
+        return links;
+    }
+
+    /** Text from every text block, and every URL that a search returned, a fetch read or a citation points to. */
     private static void collect(List<ContentBlock> content, StringBuilder text, Set<String> sources) {
         for (ContentBlock block : content) {
             block.text().ifPresent(t -> {
@@ -103,6 +138,10 @@ public final class ClaudeClient implements LLMClient {
                 for (WebSearchResultBlock r : results) {
                     sources.add(r.url());
                 }
+            }));
+            block.webFetchToolResult().ifPresent(result -> result.content().webFetchBlock().ifPresent(page -> {
+                sources.add(page.url());
+                page.content().source().text().ifPresent(body -> sources.addAll(linksIn(page.url(), body.data())));
             }));
         }
     }

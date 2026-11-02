@@ -1,7 +1,7 @@
 package avsa.infrastructure.market;
 
-/** What to ask a data source for: one make and model within a range of model years. */
-public record MarketQuery(String make, String model, int minYear, int maxYear) {
+/** What to ask a data source for: one make and model within a range of model years, near the seller. */
+public record MarketQuery(String make, String model, int minYear, int maxYear, String city, String province) {
 
     boolean matches(RawListing raw) {
         if (!make.equalsIgnoreCase(strip(raw.make())) || !model.equalsIgnoreCase(strip(raw.model()))) {

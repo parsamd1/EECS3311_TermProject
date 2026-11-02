@@ -38,7 +38,9 @@ public final class Gazetteer {
         return Optional.ofNullable(places.get(key(city, province)));
     }
 
+    /** Marketplaces write "City of Toronto" or "Town of Ajax"; the place is the same. */
     private static String key(String city, String province) {
-        return city.strip().toLowerCase(Locale.ROOT) + "|" + province.strip().toLowerCase(Locale.ROOT);
+        String name = city.strip().toLowerCase(Locale.ROOT).replaceFirst("^(city|town|township) of ", "");
+        return name + "|" + province.strip().toLowerCase(Locale.ROOT);
     }
 }

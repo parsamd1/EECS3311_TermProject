@@ -16,6 +16,7 @@ import avsa.infrastructure.market.RawListing;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -60,15 +61,16 @@ public final class ComparableFinder {
         Location seller = profile.location();
         Location origin = gazetteer.resolve(seller.city(), seller.province()).orElse(seller);
 
+        Map<MarketQuery, MarketSearchResult> fetched = new HashMap<>();
         SearchRequest current = request;
-        Attempt attempt = attempt(profile, current, origin);
+        Attempt attempt = attempt(profile, current, origin, fetched);
         while (attempt.listings.size() < MIN_COMPARABLES) {
             Optional<SearchRequest> wider = widen(current);
             if (wider.isEmpty()) {
                 break;
             }
             current = wider.get();
-            attempt = attempt(profile, current, origin);
+            attempt = attempt(profile, current, origin, fetched);
         }
         return snapshot(profile, request, current, origin, attempt);
     }
@@ -76,9 +78,16 @@ public final class ComparableFinder {
     private record Attempt(List<ComparableListing> listings, MarketSearchResult result, int skipped) {
     }
 
-    private Attempt attempt(VehicleProfile profile, SearchRequest request, Location origin) {
-        MarketSearchResult result = source.search(new MarketQuery(profile.make(), profile.model(),
-                profile.year() - request.yearWindow(), profile.year() + request.yearWindow()));
+    /**
+     * The source is asked once for the widest model-year range a search can reach, and each attempt narrows it here,
+     * so widening never pays for another live search.
+     */
+    private Attempt attempt(VehicleProfile profile, SearchRequest request, Location origin,
+                            Map<MarketQuery, MarketSearchResult> fetched) {
+        int widestWindow = Math.max(request.yearWindow(), MAX_WIDENED_YEAR_WINDOW);
+        MarketQuery query = new MarketQuery(profile.make(), profile.model(), profile.year() - widestWindow,
+                profile.year() + widestWindow, origin.city(), origin.province());
+        MarketSearchResult result = fetched.computeIfAbsent(query, source::search);
         int skipped = result.skippedRecords();
         Set<String> seen = new HashSet<>();
         List<ComparableListing> nearby = new ArrayList<>();
@@ -86,7 +95,8 @@ public final class ComparableFinder {
             Optional<ComparableListing> listing = normalizer.normalize(raw, origin);
             if (listing.isEmpty()) {
                 skipped++;
-            } else if (seen.add(listing.get().listingId()) && listing.get().distanceKm() <= request.radiusKm()
+            } else if (Math.abs(listing.get().year() - profile.year()) <= request.yearWindow()
+                    && seen.add(listing.get().listingId()) && listing.get().distanceKm() <= request.radiusKm()
                     && matchesTrim(profile, request, listing.get())) {
                 nearby.add(listing.get());
             }
@@ -134,7 +144,7 @@ public final class ComparableFinder {
                     + "Importing a CSV of listings may help.");
         }
         if (attempt.skipped > 0) {
-            warnings.add(attempt.skipped + " malformed listing records were skipped.");
+            warnings.add(attempt.skipped + " listing records were skipped because they were incomplete or could not be verified.");
         }
         return new MarketSnapshot(UUID.randomUUID(), profile.id(), clock.instant(), result.sourceName(),
                 result.fromCache(), result.retrievedAt(), used.radiusKm(), lowConfidence, attempt.skipped, ranked,

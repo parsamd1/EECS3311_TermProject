@@ -22,7 +22,7 @@ public final class AgentTrace {
     }
 
     public void recordResponse(String purpose, LLMResponse response) {
-        add(TraceKind.RESPONSE, purpose, response.text(), null);
+        add(TraceKind.RESPONSE, purpose, "[" + response.usageSummary() + "]\n" + response.text(), null);
     }
 
     public void recordRejected(String purpose, List<String> problems) {

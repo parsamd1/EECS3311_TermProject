@@ -31,14 +31,15 @@ public final class ListingNormalizer {
             return Optional.empty();
         }
         String url = cleanUrl(raw.url());
-        String identity = url.isEmpty()
-                ? String.join("|", raw.source(), raw.year(), raw.trim(), raw.odometerKm(), raw.askingPrice(), raw.city())
-                : url;
+        // A results page shows many listings, so the address alone does not identify one.
+        String identity = String.join("|", url.isEmpty() ? raw.source() : url, raw.year(), raw.trim(),
+                raw.odometerKm(), raw.askingPrice(), url.isEmpty() ? raw.city() : "");
         ComparableListing listing = new ComparableListing(
                 UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8)).toString(), cleanSource(raw.source()),
                 year.get(), cleanTrim(raw.trim()), odometer.get(), Money.cad(price.get().longValue()),
                 origin.distanceKmTo(place.get()), raw.description(), url);
         listing.setHistoryFacts(accidentStatus(raw.accidents()), isBrandedTitle(raw.titleStatus()));
+        listing.setLocationApproximate(raw.locationAssumed());
         return Optional.of(listing);
     }
 
