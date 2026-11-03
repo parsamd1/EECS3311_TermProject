@@ -17,7 +17,7 @@ public final class Session {
 
     private final UUID id;
     private String name;
-    private final VehicleProfile profile;
+    private VehicleProfile profile;
     private Instant lastModified;
     private int schemaVersion = CURRENT_SCHEMA_VERSION;
     private boolean readOnly;
@@ -59,6 +59,12 @@ public final class Session {
 
     public Optional<PriceRecommendation> activePrice() {
         return priceHistory.stream().filter(p -> p.id().equals(activePriceId)).findFirst();
+    }
+
+    /** A changed profile makes the active price out of date (F01, F03). */
+    public void updateProfile(VehicleProfile newProfile) {
+        this.profile = Objects.requireNonNull(newProfile);
+        activePrice().ifPresent(PriceRecommendation::markStale);
     }
 
     public void rename(String newName) { this.name = Objects.requireNonNull(newName); }
