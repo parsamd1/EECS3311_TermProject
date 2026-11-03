@@ -33,6 +33,11 @@ public final class AgentTrace {
         add(TraceKind.ERROR, purpose, "", error);
     }
 
+    public void recordToolCall(String name, ToolArgs args, ToolResult result) {
+        add(TraceKind.TOOL_CALL, name, "args: " + args.describe() + (result.ok() ? "; ok" : ""),
+                result.errorMessage().orElse(null));
+    }
+
     public void recordFallback(String purpose) {
         add(TraceKind.FALLBACK, purpose, "", null);
     }

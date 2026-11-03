@@ -1,5 +1,6 @@
 package avsa.agent;
 
+import avsa.domain.ComparableListing;
 import avsa.infrastructure.market.MarketQuery;
 import java.util.List;
 
@@ -46,6 +47,31 @@ public final class PromptComposer {
         return new LLMRequest("listing-search", LISTING_SEARCH_SYSTEM, user, SEARCH_MAX_TOKENS,
                 new WebSearchOptions(MAX_SEARCHES, MARKETPLACE_DOMAINS, query.city(), query.province(), "CA",
                         MAX_FETCHES, MAX_FETCH_TOKENS));
+    }
+
+    private static final String COMP_REVIEW_SYSTEM = """
+            You check used-vehicle listings that will be used as price comparables. Read each listing's text \
+            and report only real problems, using exactly one of these codes:
+            SALVAGE_TITLE: the text mentions a salvage, rebuilt or branded title, or flood or fire damage.
+            TRIM_MISMATCH: the text shows a different trim from the one given for the listing.
+            LIKELY_DUPLICATE: the listing appears to be the same vehicle as another listing in the list.
+            PRICE_TOO_LOW_TO_TRUST: the price is far below the others with no explanation, or looks like a deposit, \
+            a monthly payment or a placeholder.
+            Most listings have no problem; do not flag them. Use only the listing ids given.
+            Reply with only this JSON object: {"flags": [{"listingId": "...", "code": "TRIM_MISMATCH", \
+            "reason": "one short sentence"}]}
+            """;
+
+    /** A review of comparable listings for problems numbers cannot reveal (F02). */
+    public LLMRequest compReview(List<ComparableListing> listings, String sellerTrim) {
+        StringBuilder user = new StringBuilder("The seller's trim is \"").append(sellerTrim)
+                .append("\". Review these listings:\n");
+        for (ComparableListing l : listings) {
+            user.append("- id ").append(l.listingId()).append(": ").append(l.year()).append(' ').append(l.trim())
+                    .append(", ").append(l.odometerKm()).append(" km, asking ").append(l.askingPrice())
+                    .append(", from ").append(l.source()).append(". Text: ").append(l.description()).append('\n');
+        }
+        return new LLMRequest("comp-review", COMP_REVIEW_SYSTEM, user.toString(), 4_000, null);
     }
 
     /** A follow-up that tells the model what was wrong with its last answer. */
