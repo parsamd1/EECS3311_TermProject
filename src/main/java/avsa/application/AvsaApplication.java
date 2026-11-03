@@ -62,7 +62,8 @@ public final class AvsaApplication {
         AiTaskRunner ai = new AiTaskRunner(new PromptComposer(), client, new ResponseParser(new JsonMapper()), trace);
         boolean liveConfigured = llm != null || config.llmApiKey().isPresent();
         LiveSearchSource live = liveConfigured ? new LiveSearchSource(ai, clock) : new LiveSearchSource();
-        MarketSources sources = new MarketSources(SEEDED_DATASET, live, new ListingCache(), clock);
+        MarketSources sources = new MarketSources(SEEDED_DATASET, live,
+                new ListingCache(dataDir.resolve("cache").resolve("listings.json"), new JsonMapper()), clock);
         Gazetteer gazetteer = new Gazetteer();
         ListingValidator validator = new ListingValidator(clock);
 
@@ -82,6 +83,6 @@ public final class AvsaApplication {
                 new JsonSessionRepository(dataDir.resolve("sessions"), new JsonMapper(), new SchemaMigrator()), clock);
         EventBus events = new EventBus();
         events.subscribe(AgentEvent.class, new AutoSaveListener(sessions));
-        return new AgentController(sessions, tools, events, trace, validator, clock);
+        return new AgentController(sessions, tools, events, trace, validator, ai, liveConfigured, clock);
     }
 }

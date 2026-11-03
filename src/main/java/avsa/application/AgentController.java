@@ -1,9 +1,12 @@
 package avsa.application;
 
 import avsa.agent.AgentTrace;
+import avsa.agent.AiResult;
+import avsa.agent.AiTaskRunner;
 import avsa.agent.ToolArgs;
 import avsa.agent.ToolManager;
 import avsa.agent.ToolResult;
+import avsa.agent.tasks.ConnectionCheckTask;
 import avsa.domain.ComparableListing;
 import avsa.domain.DepreciationForecast;
 import avsa.domain.ExportedListing;
@@ -54,16 +57,20 @@ public final class AgentController {
     private final EventBus events;
     private final AgentTrace trace;
     private final ListingValidator validator;
+    private final AiTaskRunner ai;
+    private final boolean liveSearchConfigured;
     private final Clock clock;
     private List<String> lastNotes = List.of();
 
     public AgentController(SessionService sessions, ToolManager tools, EventBus events, AgentTrace trace,
-                           ListingValidator validator, Clock clock) {
+                           ListingValidator validator, AiTaskRunner ai, boolean liveSearchConfigured, Clock clock) {
         this.sessions = sessions;
         this.tools = tools;
         this.events = events;
         this.trace = trace;
         this.validator = validator;
+        this.ai = ai;
+        this.liveSearchConfigured = liveSearchConfigured;
         this.clock = clock;
     }
 
@@ -200,6 +207,18 @@ public final class AgentController {
         session.addOffer(evaluation);
         events.publish(new SessionUpdated(clock.instant(), session.id(), "offers"));
         return evaluation;
+    }
+
+    /** Whether live search can run: it needs an API key. */
+    public boolean liveSearchConfigured() {
+        return liveSearchConfigured;
+    }
+
+    /** Sends the smallest request to the model; false with the reason in {@link #lastNotes()} when it fails. */
+    public boolean checkAiConnection() {
+        AiResult<String> result = ai.run(new ConnectionCheckTask());
+        lastNotes = result.notes();
+        return !result.usedFallback();
     }
 
     private ToolResult run(String tool, ToolArgs args) {

@@ -25,7 +25,9 @@ class AvsaCliTest {
         cli = new AvsaCli(new PrintStream(out, true, StandardCharsets.UTF_8),
                           new PrintStream(err, true, StandardCharsets.UTF_8),
                           () -> AppConfig.load(Path.of("no-such-file"),
-                                  Map.of(AppConfig.API_KEY, "sk-test-secret-4321")));
+                                  Map.of(AppConfig.API_KEY, "sk-test-secret-4321")),
+                          cfg -> { throw new AssertionError("these commands need no controller"); },
+                          Path.of("no-such-dir"));
     }
 
     @Test

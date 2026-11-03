@@ -41,8 +41,15 @@ CLI examples:
 
 ```sh
 ./mvnw -q exec:java -Dexec.args="--help"     # list commands
-./mvnw -q exec:java -Dexec.args="config"     # check the model and whether a key is configured
+./mvnw -q exec:java -Dexec.args="config"     # check the model, the key and the data folder
+./mvnw -q exec:java -Dexec.args="profile set --make Mazda --model CX-5 --year 2022 --trim GS --body suv --km 49000 --city Toronto --province ON --defect 'scratch:rear door:minor'"
+./mvnw -q exec:java -Dexec.args="comps search"                 # comparables from the seeded dataset
+./mvnw -q exec:java -Dexec.args="comps search --source live"   # live search of AutoTrader.ca, Kijiji and CarGurus (needs a key)
+./mvnw -q exec:java -Dexec.args="price --strategy max-profit --accept"
+./mvnw -q exec:java -Dexec.args="doctor --live"                # pre-demo check: key, connection and one rehearsal search
 ```
+
+Live search takes one to three minutes and costs a few cents per search. If it fails, the app shows the last successful live result with its date, or else the seeded dataset, and says which. Sessions and saved live results are kept in `~/.avsa` (set `AVSA_DATA_DIR` to change it), outside the project, because a session can contain the vehicle's VIN. Add `--json` to any command to print the agent trace.
 
 ## Stage 1: Software and Agent Design
 

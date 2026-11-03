@@ -74,6 +74,11 @@ public final class PromptComposer {
         return new LLMRequest("comp-review", COMP_REVIEW_SYSTEM, user.toString(), 4_000, null);
     }
 
+    /** A one-word request used by the pre-demo check. */
+    public LLMRequest connectionCheck() {
+        return new LLMRequest("connection-check", "Reply with exactly one word.", "Reply with OK.", 1_000, null);
+    }
+
     /** A follow-up that tells the model what was wrong with its last answer. */
     public LLMRequest repair(LLMRequest request, List<String> errors) {
         StringBuilder feedback = new StringBuilder(request.user())
