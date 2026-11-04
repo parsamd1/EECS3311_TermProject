@@ -108,6 +108,10 @@ public final class PricingEngine {
                 value = value.plus(a.amount());
             }
         }
+        for (PriceAdjustment a : aiAdjustments(input.aiAdjustments(), baseline, params, warnings)) {
+            adjustments.add(a);
+            value = value.plus(a.amount());
+        }
 
         double margin = params.negotiationMargin();
         Money expected = value.times(1 - margin);
@@ -195,6 +199,31 @@ public final class PricingEngine {
                     baseline.times(-EXTRA_OWNER_RATE * extraOwners), AdjustmentKind.HISTORY));
         }
         return result;
+    }
+
+    /**
+     * Accepted AI proposals (F03): each is capped at the configured share of the baseline and only the
+     * allowed number are used, so the AI can never move the price far on its own.
+     */
+    static List<PriceAdjustment> aiAdjustments(List<PriceAdjustment> proposed, Money baseline, PricingParameters params,
+                                               List<String> warnings) {
+        List<PriceAdjustment> applied = new ArrayList<>();
+        double cap = baseline.toDouble() * params.aiAdjustmentCap();
+        for (PriceAdjustment a : proposed) {
+            if (!a.applies()) {
+                continue;
+            }
+            if (applied.size() >= params.maxAiAdjustments()) {
+                warnings.add("Only " + params.maxAiAdjustments() + " AI adjustments can be applied; the rest were ignored.");
+                break;
+            }
+            if (Math.abs(a.amount().toDouble()) > cap + 0.5) {
+                warnings.add("The AI adjustment \"" + a.label() + "\" exceeds the cap and was ignored.");
+                continue;
+            }
+            applied.add(a);
+        }
+        return applied;
     }
 
     static double accidentRate(Severity severity) {

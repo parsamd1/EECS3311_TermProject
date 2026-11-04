@@ -28,6 +28,7 @@ public final class PriceRecommendation {
     private String explanation;
     private boolean templateExplanation;
     private boolean stale;
+    private List<PriceAdjustment> proposals = List.of();
 
     public PriceRecommendation(StrategyType strategy, Money baseline, PriceRange retail, PriceRange wholesale,
                                Money askingPrice, Money walkAwayFloor, Confidence confidence,
@@ -71,6 +72,15 @@ public final class PriceRecommendation {
     }
 
     /** Called when new information (e.g. an imported history) makes this price out of date. */
+    /** AI-proposed adjustments the seller has not accepted yet; they do not change the price until accepted. */
+    public List<PriceAdjustment> proposals() {
+        return proposals;
+    }
+
+    public void setProposals(List<PriceAdjustment> newProposals) {
+        this.proposals = List.copyOf(newProposals);
+    }
+
     public void markStale() {
         this.stale = true;
     }

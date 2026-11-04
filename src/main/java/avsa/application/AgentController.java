@@ -18,6 +18,7 @@ import avsa.domain.Money;
 import avsa.domain.Offer;
 import avsa.domain.OfferEvaluation;
 import avsa.domain.Platform;
+import avsa.domain.PriceAdjustment;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
 import avsa.domain.Session;
@@ -45,6 +46,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Facade: the single entry point for the GUI and the CLI. It reads and updates the current
@@ -61,6 +63,8 @@ public final class AgentController {
     private final boolean liveSearchConfigured;
     private final Clock clock;
     private List<String> lastNotes = List.of();
+    private PricingInput lastPricingInput;
+    private PriceRecommendation lastRecommendation;
 
     public AgentController(SessionService sessions, ToolManager tools, EventBus events, AgentTrace trace,
                            ListingValidator validator, AiTaskRunner ai, boolean liveSearchConfigured, Clock clock) {
@@ -143,13 +147,36 @@ public final class AgentController {
         List<ComparableListing> comps = session.latestSnapshot().map(MarketSnapshot::rankedListings).orElse(List.of());
         PricingInput input = new PricingInput(session.activeProfile(), comps, params, manualBaseline,
                 session.history().orElse(null));
-        return run(PricingTool.NAME, ToolArgs.of("input", input, "strategy", strategy))
+        PriceRecommendation rec = run(PricingTool.NAME, ToolArgs.of("input", input, "strategy", strategy))
                 .valueAs(PriceRecommendation.class);
+        lastPricingInput = input;
+        lastRecommendation = rec;
+        return rec;
     }
 
     public void acceptPrice(PriceRecommendation rec) {
-        session().setActivePrice(rec);
+        acceptPrice(rec, List.of());
+    }
+
+    /**
+     * Makes the price active. Accepted AI proposals are applied by re-running the engine, so each one
+     * is capped there and the explanation from the first run is kept (F03).
+     */
+    public PriceRecommendation acceptPrice(PriceRecommendation rec, List<UUID> acceptedAiIds) {
+        PriceRecommendation active = rec;
+        if (!acceptedAiIds.isEmpty()) {
+            if (lastRecommendation == null || !lastRecommendation.id().equals(rec.id())) {
+                throw new IllegalStateException("Run pricing again before accepting AI adjustments.");
+            }
+            List<PriceAdjustment> accepted = rec.proposals().stream().filter(p -> acceptedAiIds.contains(p.id()))
+                    .map(p -> new PriceAdjustment(p.id(), p.label(), p.amount(), p.kind(), true)).toList();
+            active = run(PricingTool.NAME, ToolArgs.of("input", lastPricingInput.withAiAdjustments(accepted),
+                    "strategy", rec.strategy(), "explain", false)).valueAs(PriceRecommendation.class);
+            active.setExplanation(rec.explanation().orElse(""), rec.templateExplanation());
+        }
+        session().setActivePrice(active);
         events.publish(new PriceRecommended(clock.instant(), session().id()));
+        return active;
     }
 
     public DepreciationForecast forecast(Money monthlyHoldingCost) {

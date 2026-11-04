@@ -14,6 +14,7 @@ import avsa.domain.FuelType;
 import avsa.domain.ListingFlag;
 import avsa.domain.Location;
 import avsa.domain.MarketSnapshot;
+import avsa.domain.PriceAdjustment;
 import avsa.domain.Money;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
@@ -291,10 +292,24 @@ public final class AvsaCli implements EventListener {
         rec.adjustments().forEach(a -> out.println("  adjustment: " + a.label() + " " + a.amount()));
         rec.warnings().forEach(w -> out.println("Warning: " + w));
         rec.explanation().ifPresent(e -> out.println((rec.templateExplanation() ? "Explanation (template): "
-                : "Explanation: ") + e));
-        if (o.flag("accept")) {
-            controller.acceptPrice(rec);
-            out.println("Accepted as the active price.");
+                : "Explanation (AI): ") + e));
+        for (int i = 0; i < rec.proposals().size(); i++) {
+            PriceAdjustment p = rec.proposals().get(i);
+            out.println("  AI proposal " + (i + 1) + ": " + p.label() + " " + p.amount() + " (not applied)");
+        }
+        printNotes(controller);
+        List<UUID> acceptedAi = new ArrayList<>();
+        for (String index : o.option("accept-ai").map(v -> v.split(",")).orElse(new String[0])) {
+            int n = CliOptions.parseInt("accept-ai", index.strip());
+            if (n < 1 || n > rec.proposals().size()) {
+                throw new IllegalArgumentException("There is no AI proposal " + n + ".");
+            }
+            acceptedAi.add(rec.proposals().get(n - 1).id());
+        }
+        if (o.flag("accept") || !acceptedAi.isEmpty()) {
+            PriceRecommendation active = controller.acceptPrice(rec, acceptedAi);
+            out.println("Accepted as the active price" + (acceptedAi.isEmpty() ? "." : " with " + acceptedAi.size()
+                    + " AI adjustment(s): retail " + active.retail() + ", asking " + active.askingPrice() + "."));
         }
         return EXIT_OK;
     }
@@ -413,7 +428,8 @@ public final class AvsaCli implements EventListener {
         out.println("  profile show             Show the current vehicle");
         out.println("  session list|load <id>|delete <id>");
         out.println("  comps search [--source seeded|live|csv] [--csv file] [--radius km] [--max n]");
-        out.println("  price [--strategy max-profit|quick-sale] [--margin 0.05] [--spread 0.14] [--baseline N] [--accept]");
+        out.println("  price [--strategy max-profit|quick-sale] [--margin 0.05] [--spread 0.14] [--baseline N]");
+        out.println("        [--accept] [--accept-ai 1,2]   accept the price, optionally with numbered AI proposals");
         out.println();
         out.println("Options:");
         out.println("  --json       Also print the agent trace as JSON");

@@ -1,6 +1,8 @@
 package avsa.agent;
 
 import avsa.domain.ComparableListing;
+import avsa.domain.PriceRecommendation;
+import avsa.domain.VehicleFacts;
 import avsa.infrastructure.market.MarketQuery;
 import java.util.List;
 
@@ -72,6 +74,41 @@ public final class PromptComposer {
                     .append(", from ").append(l.source()).append(". Text: ").append(l.description()).append('\n');
         }
         return new LLMRequest("comp-review", COMP_REVIEW_SYSTEM, user.toString(), 4_000, null);
+    }
+
+    private static final String PRICE_EXPLANATION_SYSTEM = """
+            You explain a used-vehicle price to a private seller in Canada, in plain language, in at most five \
+            sentences. The numbers were computed by a pricing engine and are final: explain them, never change \
+            them, and do not state any dollar amount that is not in the figures you are given.
+
+            You may also propose up to three adjustments for things the engine cannot know, such as included \
+            winter tires, a recent major service or aftermarket parts, using only the vehicle facts given. Each is a \
+            percent of the baseline between -3 and 3. Do not propose adjustments for odometer, condition, defects, \
+            accidents, owners or history: those are already counted. Propose none if nothing applies.
+
+            Reply with only this JSON object:
+            {"explanation": "...", "adjustments": [{"label": "Winter tires included", "percent": 1.0, \
+            "reason": "one short sentence"}]}
+            """;
+
+    /** An explanation of computed prices, with optional bounded adjustment proposals (F03). */
+    public LLMRequest pricingExplanation(PriceRecommendation rec, VehicleFacts facts, int comparableCount) {
+        StringBuilder user = new StringBuilder("Vehicle: ").append(facts.vehicleName()).append(", ")
+                .append(facts.odometerKm()).append(" km, in ").append(facts.city()).append(", ").append(facts.province())
+                .append(".\nFeatures: ").append(facts.features().isEmpty() ? "none listed" : String.join(", ",
+                        facts.features()))
+                .append("\nMaintenance records: ").append(facts.maintenanceRecords().size())
+                .append("\nStrategy: ").append(rec.strategy().name().toLowerCase().replace('_', ' '))
+                .append("\nComparable listings used: ").append(comparableCount)
+                .append("\nBaseline: ").append(rec.baseline())
+                .append("\nRetail range: ").append(rec.retail())
+                .append("\nWholesale range: ").append(rec.wholesale())
+                .append("\nAsking price: ").append(rec.askingPrice())
+                .append("\nWalk-away floor: ").append(rec.walkAwayFloor())
+                .append("\nConfidence: ").append(rec.confidence().name().toLowerCase());
+        rec.adjustments().forEach(a -> user.append("\nAdjustment: ").append(a.label()).append(' ').append(a.amount()));
+        rec.warnings().forEach(w -> user.append("\nWarning: ").append(w));
+        return new LLMRequest("price-explanation", PRICE_EXPLANATION_SYSTEM, user.toString(), 8_000, null);
     }
 
     /** A one-word request used by the pre-demo check. */

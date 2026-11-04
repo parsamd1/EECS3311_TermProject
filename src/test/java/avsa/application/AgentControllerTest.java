@@ -106,6 +106,38 @@ class AgentControllerTest {
     }
 
     @Test
+    void theAiExplainsThePriceAndAnAcceptedProposalChangesItWithinTheCap() {
+        AgentController c = controller();
+        c.saveProfile(cx5());
+        llm.thenRespond("{\"flags\": []}");
+        c.findComparables(SearchRequest.defaults(), MarketSourceType.SEEDED, null);
+        llm.thenRespond("{\"explanation\": \"Private buyers should pay within the retail range.\", \"adjustments\": "
+                + "[{\"label\": \"Winter tires included\", \"percent\": 1.0, \"reason\": \"Extra set\"}]}");
+        PriceRecommendation rec = c.recommendPrice(StrategyType.MAX_PROFIT, PricingParameters.defaults(), null);
+        assertFalse(rec.templateExplanation());
+        assertEquals(1, rec.proposals().size());
+
+        PriceRecommendation active = c.acceptPrice(rec, List.of(rec.proposals().get(0).id()));
+        assertTrue(active.askingPrice().compareTo(rec.askingPrice()) > 0, "winter tires raise the price");
+        assertEquals("Private buyers should pay within the retail range.", active.explanation().orElseThrow());
+        assertEquals(active.id(), c.sessions().current().activePrice().orElseThrow().id());
+        assertTrue(active.adjustments().stream().anyMatch(a -> a.label().startsWith("Winter tires")));
+    }
+
+    @Test
+    void anOversizedAiAdjustmentIsIgnoredByTheEngine() {
+        AgentController c = controller();
+        c.saveProfile(cx5());
+        PriceRecommendation rec = c.recommendPrice(StrategyType.MAX_PROFIT, PricingParameters.defaults(), Money.cad(30_000));
+        avsa.domain.PriceAdjustment huge = new avsa.domain.PriceAdjustment(java.util.UUID.randomUUID(), "Gold paint",
+                Money.cad(5_000), avsa.domain.AdjustmentKind.AI_PROPOSED, false);
+        rec.setProposals(List.of(huge));
+        PriceRecommendation active = c.acceptPrice(rec, List.of(huge.id()));
+        assertEquals(rec.askingPrice(), active.askingPrice());
+        assertTrue(active.warnings().stream().anyMatch(w -> w.contains("exceeds the cap")));
+    }
+
+    @Test
     void editsAreValidatedAgainAndAFailingListingCanBeOverridden() {
         AgentController c = controller();
         c.saveProfile(cx5());

@@ -1,17 +1,23 @@
 package avsa.tools;
 
+import avsa.agent.AiResult;
 import avsa.agent.AiTaskRunner;
 import avsa.agent.ToolArgs;
 import avsa.agent.ToolResult;
+import avsa.agent.tasks.PriceExplanation;
+import avsa.agent.tasks.PriceExplanationTask;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.StrategyType;
+import avsa.domain.VehicleFacts;
 import avsa.services.PricingEngine;
 import avsa.services.PricingInput;
 import avsa.services.PricingStrategy;
+import java.util.List;
 
 /**
- * Computes the price with the chosen strategy (F03). The AI explanation is added with the
- * pricing AI work; until then a plain template explains the numbers. Args: input, strategy.
+ * Computes the price with the chosen strategy (F03), then has the AI explain it and propose
+ * bounded adjustments. Args: input, strategy, explain (default true; false when re-pricing with
+ * accepted adjustments).
  */
 public final class PricingTool extends AiAssistedTool {
 
@@ -34,15 +40,16 @@ public final class PricingTool extends AiAssistedTool {
         PricingInput input = args.require("input", PricingInput.class);
         StrategyType strategy = args.require("strategy", StrategyType.class);
         PriceRecommendation rec = engine.recommend(input, PricingStrategy.of(strategy));
-        rec.setExplanation(templateExplanation(rec), true);
-        return ToolResult.success(rec);
-    }
-
-    static String templateExplanation(PriceRecommendation rec) {
-        return "The retail range " + rec.retail() + " is what private buyers are expected to pay, based on the "
-                + "comparable listings after adjusting for odometer, condition and history. Dealers usually pay about "
-                + Math.round(rec.parameters().dealerSpread() * 100) + "% less, which gives the wholesale range "
-                + rec.wholesale() + ". Ask " + rec.askingPrice() + " and do not accept less than " + rec.walkAwayFloor()
-                + ". Confidence is " + rec.confidence().name().toLowerCase() + ".";
+        if (!args.optional("explain", Boolean.class).orElse(true)) {
+            rec.setExplanation(PriceExplanationTask.templateExplanation(rec), true);
+            return ToolResult.success(rec);
+        }
+        VehicleFacts facts = VehicleFacts.from(input.profile(), input.history(), rec.askingPrice());
+        AiResult<PriceExplanation> result = ai.run(new PriceExplanationTask(rec, facts,
+                (int) input.comparables().stream().filter(c -> !c.excluded()).count()));
+        rec.setExplanation(result.value().explanation(), result.usedFallback());
+        rec.setProposals(PriceExplanationTask.proposals(result.value(), rec.baseline()));
+        return ToolResult.success(rec, result.usedFallback()
+                ? List.of("The AI explanation was unavailable, so a template explanation is shown.") : List.of());
     }
 }
