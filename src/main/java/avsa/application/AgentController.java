@@ -229,7 +229,8 @@ public final class AgentController {
     public OfferEvaluation evaluateOffer(Offer offer) {
         Session session = session();
         OfferEvaluation evaluation = run(OfferEvaluationTool.NAME, ToolArgs.of("offer", offer,
-                "price", activePrice(session), "forecast", session.forecast().orElse(null)))
+                "price", activePrice(session), "forecast", session.forecast().orElse(null),
+                "comparables", session.latestSnapshot().map(MarketSnapshot::rankedListings).orElse(List.of())))
                 .valueAs(OfferEvaluation.class);
         session.addOffer(evaluation);
         events.publish(new SessionUpdated(clock.instant(), session.id(), "offers"));

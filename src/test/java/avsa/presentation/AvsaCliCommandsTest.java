@@ -85,6 +85,24 @@ class AvsaCliCommandsTest {
     }
 
     @Test
+    void historyForecastAndOfferCommandsWork() {
+        run(null, PROFILE);
+        assertEquals(AvsaCli.EXIT_OK, run(null, "history", "set", "--owners", "2", "--accidents", "0", "--lien", "none",
+                "--provinces", "QC, ON"));
+        assertTrue(output().contains("Provinces:   QC -> ON"));
+        run(null, "comps", "search");
+        run(null, "price", "--accept");
+        assertEquals(AvsaCli.EXIT_OK, run(null, "forecast", "--holding", "150"));
+        assertTrue(output().contains(" 3 months: worth"));
+        assertEquals(AvsaCli.EXIT_OK, run(null, "offer", "add", "--amount", "18000", "--notes", "High kilometres"));
+        assertTrue(output().contains("Verdict:     low ball"));
+        assertTrue(output().contains("Script (template):"));
+        assertEquals(AvsaCli.EXIT_OK, run(null, "offer", "list"));
+        assertTrue(output().contains("$18000 from dealer: low ball"));
+        assertEquals(AvsaCli.EXIT_ERROR, run(null, "history", "import", "--file", dir.resolve("none.pdf").toString()));
+    }
+
+    @Test
     void liveSearchWithoutAKeySaysItWillUseTheSeededData() {
         run(null, PROFILE);
         assertEquals(AvsaCli.EXIT_OK, run(null, "comps", "search", "--source", "live"));

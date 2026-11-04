@@ -5,10 +5,16 @@ import avsa.application.AgentEvent;
 import avsa.application.AvsaApplication;
 import avsa.application.EventListener;
 import avsa.application.SessionService;
+import avsa.domain.AccidentRecord;
 import avsa.domain.BodyStyle;
+import avsa.domain.BuyerType;
 import avsa.domain.ComparableListing;
 import avsa.domain.ConditionReport;
 import avsa.domain.Defect;
+import avsa.domain.DepreciationForecast;
+import avsa.domain.ForecastPoint;
+import avsa.domain.HistorySourceType;
+import avsa.domain.LienStatus;
 import avsa.domain.DefectType;
 import avsa.domain.FuelType;
 import avsa.domain.ExportedListing;
@@ -20,6 +26,8 @@ import avsa.domain.MarketSnapshot;
 import avsa.domain.Platform;
 import avsa.domain.PriceAdjustment;
 import avsa.domain.Money;
+import avsa.domain.Offer;
+import avsa.domain.OfferEvaluation;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
 import avsa.domain.Session;
@@ -28,9 +36,12 @@ import avsa.domain.Severity;
 import avsa.domain.StrategyType;
 import avsa.domain.Tone;
 import avsa.domain.Transmission;
+import avsa.domain.VehicleHistory;
 import avsa.domain.VehicleProfile;
 import avsa.infrastructure.AppConfig;
 import avsa.infrastructure.JsonMapper;
+import avsa.infrastructure.history.HistoryImportResult;
+import avsa.infrastructure.history.HistoryInput;
 import avsa.infrastructure.market.Gazetteer;
 import avsa.infrastructure.market.MarketSourceType;
 import avsa.services.ListingExporter;
@@ -41,6 +52,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -64,9 +76,9 @@ public final class AvsaCli implements EventListener {
     static final int EXIT_USAGE = 2;
 
     private static final Set<String> FLAGS = Set.of("json", "accept", "live", "help", "version", "no-features",
-            "no-maintenance");
+            "no-maintenance", "confirm");
     private static final Set<String> COMMANDS = Set.of("profile", "session", "comps", "price", "doctor", "listing",
-            "export");
+            "export", "offer", "forecast", "history");
 
     private final PrintStream out;
     private final PrintStream err;
@@ -135,6 +147,9 @@ public final class AvsaCli implements EventListener {
                 case "doctor" -> doctor(controller, options);
                 case "listing" -> listing(controller, options);
                 case "export" -> export(controller, options);
+                case "offer" -> offer(controller, options);
+                case "forecast" -> forecast(controller, options);
+                case "history" -> history(controller, options);
                 default -> {
                     err.println("Unknown command: " + command);
                     err.println("Run 'avsa --help' to see the available commands.");
@@ -381,6 +396,107 @@ public final class AvsaCli implements EventListener {
         return EXIT_OK;
     }
 
+    private int offer(AgentController controller, CliOptions o) {
+        if (o.word(1).equals("list")) {
+            List<OfferEvaluation> log = controller.sessions().current().offerLog();
+            if (log.isEmpty()) {
+                out.println("No offers yet.");
+            }
+            log.forEach(e -> out.println(e.offer().receivedAt() + "  " + e.offer().amount() + " from "
+                    + e.offer().buyerType().name().toLowerCase() + ": " + e.verdict().name().toLowerCase().replace('_', ' ')));
+            return EXIT_OK;
+        }
+        if (!o.word(1).equals("add")) {
+            throw new IllegalArgumentException("Use 'avsa offer add --amount N --buyer dealer [--notes \"...\"]' or "
+                    + "'avsa offer list'.");
+        }
+        Offer offer = new Offer(Money.cad(CliOptions.parseInt("amount", o.required("amount"))),
+                parseEnum(BuyerType.class, "buyer", o.option("buyer").orElse("dealer")), o.option("notes").orElse(""),
+                Instant.now());
+        OfferEvaluation e = controller.evaluateOffer(offer);
+        out.println("Verdict:     " + e.verdict().name().toLowerCase().replace('_', ' ')
+                + String.format(Locale.ROOT, " (%.0f%% of the way through the wholesale range)",
+                Math.max(0, Math.min(1, e.positionInWholesale())) * 100));
+        out.println("Gap to the top of wholesale: " + e.gapToWholesaleTop());
+        e.counterAmount().ifPresent(c -> out.println("Counter at:  " + c));
+        if (e.belowWalkAwayFloor()) {
+            out.println("This offer is below your walk-away floor.");
+        }
+        e.netIfWaiting().ifPresent(n -> out.println("Waiting for a private buyer is expected to net about " + n
+                + " after depreciation and holding costs."));
+        e.warnings().forEach(w -> out.println("Warning: " + w));
+        e.script().ifPresent(s -> out.println("Script" + (e.templateScript() ? " (template)" : " (AI)") + ":\n" + s));
+        printNotes(controller);
+        return EXIT_OK;
+    }
+
+    private int forecast(AgentController controller, CliOptions o) {
+        DepreciationForecast f = controller.forecast(Money.cad(o.intOption("holding", 0)));
+        out.println("Starting from " + f.referencePrice() + " (" + f.segment().name().toLowerCase() + " rates), holding "
+                + "cost " + f.monthlyHoldingCost() + " a month:");
+        for (ForecastPoint p : f.points()) {
+            out.println(String.format(Locale.ROOT, "  %2d months: worth %s to %s, %.1f%% lost, net %s", p.months(),
+                    p.lowValue(), p.highValue(), p.lossPercent(), p.netIfSoldThen()));
+        }
+        out.println(f.breakEvenMonth().map(m -> "From month " + m + ", waiting nets less than selling to a dealer today ("
+                + f.wholesaleToday() + ").").orElse("Within 12 months, waiting still nets more than a dealer pays today."));
+        f.warnings().forEach(w -> out.println("Warning: " + w));
+        return EXIT_OK;
+    }
+
+    private int history(AgentController controller, CliOptions o) {
+        switch (o.word(1)) {
+            case "import" -> {
+                HistoryImportResult result = controller.importHistory(HistoryInput.fromFile(Path.of(o.required("file"))));
+                if (result.needsManualEntry()) {
+                    out.println("The report could not be read: " + result.reason().orElse("") + " Use 'avsa history set'.");
+                    return EXIT_ERROR;
+                }
+                VehicleHistory h = result.history();
+                printHistory(h);
+                result.report().warnings().forEach(w -> out.println((w.blocking() ? "Blocking: " : "Warning: ")
+                        + w.message()));
+                if (!o.flag("confirm")) {
+                    out.println("Check the values, then run the same command with --confirm to use them.");
+                } else if (result.report().hasBlockingWarning()) {
+                    out.println("Not saved: fix the blocking problem first.");
+                    return EXIT_ERROR;
+                } else {
+                    controller.confirmHistory(h);
+                    out.println("History saved. Run pricing again to include it.");
+                }
+            }
+            case "set" -> {
+                String accidents = o.required("accidents");
+                boolean known = !accidents.equalsIgnoreCase("unknown");
+                List<AccidentRecord> records = new ArrayList<>();
+                for (int i = 0; known && i < CliOptions.parseInt("accidents", accidents); i++) {
+                    records.add(new AccidentRecord(null, null, "Entered by the seller"));
+                }
+                VehicleHistory h = new VehicleHistory(null, o.option("owners").map(v -> CliOptions.parseInt("owners", v))
+                        .orElse(null), null, parseEnum(LienStatus.class, "lien", o.option("lien").orElse("unknown")),
+                        o.option("provinces").map(p -> List.of(p.split("\\s*,\\s*"))).orElse(List.of()),
+                        HistorySourceType.MANUAL, known, records, List.of());
+                controller.confirmHistory(h);
+                printHistory(h);
+                out.println("History saved. Run pricing again to include it.");
+            }
+            default -> throw new IllegalArgumentException("Use 'avsa history import --file report.pdf [--confirm]' or "
+                    + "'avsa history set --owners N --accidents N|unknown [--lien none|outstanding|unknown]'.");
+        }
+        return EXIT_OK;
+    }
+
+    private void printHistory(VehicleHistory h) {
+        out.println("Owners:      " + h.ownerCount().map(String::valueOf).orElse("unknown"));
+        out.println("Accidents:   " + (h.accidentsKnown() ? String.valueOf(h.accidents().size()) : "unknown"));
+        out.println("Lien:        " + h.lienStatus().name().toLowerCase());
+        out.println("Provinces:   " + (h.registrationProvinces().isEmpty() ? "unknown"
+                : String.join(" -> ", h.registrationProvinces())));
+        h.trustBadges().forEach(b -> out.println("  badge: " + b));
+        h.fieldsToConfirm().forEach(f -> out.println("  please confirm: " + f));
+    }
+
     /** The pre-demo check: key, model, and optionally one rehearsal live search. */
     private int doctor(AgentController controller, CliOptions o) {
         AppConfig cfg = config.get();
@@ -501,6 +617,11 @@ public final class AvsaCli implements EventListener {
         out.println("                   [--keywords \"a, b\"]");
         out.println("  listing show|override    Show the latest listing, or accept its validation warnings");
         out.println("  export --platform autotrader|kijiji|facebook-marketplace [--out file]");
+        out.println("  history import --file report.pdf|report.json [--confirm]");
+        out.println("  history set --owners N --accidents N|unknown [--lien none|outstanding|unknown] [--provinces ON]");
+        out.println("  forecast [--holding 150]  Value at 3, 6 and 12 months and when waiting stops paying off");
+        out.println("  offer add --amount N [--buyer dealer|private] [--notes \"what the buyer said\"]");
+        out.println("  offer list");
         out.println();
         out.println("Options:");
         out.println("  --json       Also print the agent trace as JSON");

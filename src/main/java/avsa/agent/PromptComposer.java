@@ -2,6 +2,8 @@ package avsa.agent;
 
 import avsa.domain.ComparableListing;
 import avsa.domain.ListingOptions;
+import avsa.domain.Money;
+import avsa.domain.OfferEvaluation;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.VehicleFacts;
 import avsa.infrastructure.market.MarketQuery;
@@ -171,6 +173,32 @@ public final class PromptComposer {
 
     private static String lower(Enum<?> value) {
         return value == null ? "unknown" : value.name().toLowerCase();
+    }
+
+    private static final String COUNTER_SCRIPT_SYSTEM = """
+            You help a private seller in Canada reply to an offer on their used vehicle. Write what the seller \
+            can say or send to the buyer: polite, firm, under 150 words, in the first person. If the buyer gave \
+            reasons for their price, answer them briefly, citing the comparable listings given. Use only the \
+            dollar figures given; never invent a number. If a counter amount is given, ask for exactly that \
+            amount. If the verdict is strong, accept the offer instead of countering.
+            Reply with only the script text.
+            """;
+
+    /** A counter-offer script for an evaluated offer (F11). */
+    public LLMRequest counterScript(OfferEvaluation e, PriceRecommendation price, List<ComparableListing> comparables) {
+        StringBuilder user = new StringBuilder("Offer: ").append(e.offer().amount()).append(" from a ")
+                .append(e.offer().buyerType().name().toLowerCase().replace('_', ' '))
+                .append("\nVerdict: ").append(e.verdict().name().toLowerCase().replace('_', ' '))
+                .append("\nCounter amount: ").append(e.counterAmount().map(Money::toString).orElse("none, accept"))
+                .append("\nWholesale range (what dealers pay): ").append(price.wholesale())
+                .append("\nRetail range (what private buyers pay): ").append(price.retail())
+                .append("\nAsking price: ").append(price.askingPrice());
+        if (!e.offer().notes().isBlank()) {
+            user.append("\nThe buyer said: ").append(e.offer().notes());
+        }
+        comparables.stream().limit(3).forEach(c -> user.append("\nComparable: ").append(c.year()).append(' ')
+                .append(c.trim()).append(", ").append(c.odometerKm()).append(" km, listed at ").append(c.askingPrice()));
+        return new LLMRequest("counter-script", COUNTER_SCRIPT_SYSTEM, user.toString(), 4_000, null);
     }
 
     /** A one-word request used by the pre-demo check. */
