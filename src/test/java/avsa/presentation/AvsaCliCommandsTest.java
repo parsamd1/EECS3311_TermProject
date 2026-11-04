@@ -69,6 +69,22 @@ class AvsaCliCommandsTest {
     }
 
     @Test
+    void listingAndExportCommandsWorkWithoutAKeyUsingTheTemplate() {
+        run(null, PROFILE);
+        run(null, "comps", "search");
+        run(null, "price", "--accept");
+        assertEquals(AvsaCli.EXIT_OK, run(null, "listing", "generate", "--tone", "friendly"));
+        assertTrue(output().contains("Written by: template (AI unavailable)"));
+        assertTrue(output().contains("Validation:  passed"));
+        Path out = dir.resolve("kijiji.txt");
+        assertEquals(AvsaCli.EXIT_OK, run(null, "export", "--platform", "kijiji", "--out", out.toString()));
+        assertTrue(output().contains("---- Kijiji ----"));
+        assertTrue(output().contains("Saved to " + out));
+        assertTrue(output().contains("title: "));
+        assertEquals(AvsaCli.EXIT_USAGE, run(null, "export", "--platform", "craigslist"));
+    }
+
+    @Test
     void liveSearchWithoutAKeySaysItWillUseTheSeededData() {
         run(null, PROFILE);
         assertEquals(AvsaCli.EXIT_OK, run(null, "comps", "search", "--source", "live"));

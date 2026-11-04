@@ -38,7 +38,8 @@ public final class AiTaskRunner {
     public <T> AiResult<T> run(AiTask<T> task) {
         LLMRequest request = task.buildPrompt(composer);
         List<String> notes = new ArrayList<>();
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        int attempts = task.maxAttempts() > 0 ? task.maxAttempts() : maxAttempts;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
             trace.recordPrompt(request);
             LLMResponse response;
             try {

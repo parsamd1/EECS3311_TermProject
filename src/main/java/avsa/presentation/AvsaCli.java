@@ -11,9 +11,13 @@ import avsa.domain.ConditionReport;
 import avsa.domain.Defect;
 import avsa.domain.DefectType;
 import avsa.domain.FuelType;
+import avsa.domain.ExportedListing;
+import avsa.domain.GeneratedListing;
 import avsa.domain.ListingFlag;
+import avsa.domain.ListingOptions;
 import avsa.domain.Location;
 import avsa.domain.MarketSnapshot;
+import avsa.domain.Platform;
 import avsa.domain.PriceAdjustment;
 import avsa.domain.Money;
 import avsa.domain.PriceRecommendation;
@@ -22,12 +26,14 @@ import avsa.domain.Session;
 import avsa.domain.SessionSummary;
 import avsa.domain.Severity;
 import avsa.domain.StrategyType;
+import avsa.domain.Tone;
 import avsa.domain.Transmission;
 import avsa.domain.VehicleProfile;
 import avsa.infrastructure.AppConfig;
 import avsa.infrastructure.JsonMapper;
 import avsa.infrastructure.market.Gazetteer;
 import avsa.infrastructure.market.MarketSourceType;
+import avsa.services.ListingExporter;
 import avsa.services.SearchRequest;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -57,8 +63,10 @@ public final class AvsaCli implements EventListener {
     static final int EXIT_ERROR = 1;
     static final int EXIT_USAGE = 2;
 
-    private static final Set<String> FLAGS = Set.of("json", "accept", "live", "help", "version");
-    private static final Set<String> COMMANDS = Set.of("profile", "session", "comps", "price", "doctor");
+    private static final Set<String> FLAGS = Set.of("json", "accept", "live", "help", "version", "no-features",
+            "no-maintenance");
+    private static final Set<String> COMMANDS = Set.of("profile", "session", "comps", "price", "doctor", "listing",
+            "export");
 
     private final PrintStream out;
     private final PrintStream err;
@@ -125,6 +133,8 @@ public final class AvsaCli implements EventListener {
                 case "comps" -> comps(controller, options);
                 case "price" -> price(controller, options);
                 case "doctor" -> doctor(controller, options);
+                case "listing" -> listing(controller, options);
+                case "export" -> export(controller, options);
                 default -> {
                     err.println("Unknown command: " + command);
                     err.println("Run 'avsa --help' to see the available commands.");
@@ -314,6 +324,63 @@ public final class AvsaCli implements EventListener {
         return EXIT_OK;
     }
 
+    private int listing(AgentController controller, CliOptions o) {
+        GeneratedListing listing = switch (o.word(1)) {
+            case "generate" -> controller.generateListing(new ListingOptions(
+                    parseEnum(Tone.class, "tone", o.option("tone").orElse("professional")), !o.flag("no-features"),
+                    !o.flag("no-maintenance"), o.option("keywords").map(k -> List.of(k.split("\\s*,\\s*")))
+                    .orElse(List.of())));
+            case "show" -> controller.sessions().current().latestListing().orElseThrow(() ->
+                    new IllegalStateException("No listing yet. Run 'avsa listing generate'."));
+            case "override" -> controller.overrideListingValidation();
+            default -> throw new IllegalArgumentException("Use 'avsa listing generate|show|override'.");
+        };
+        printListing(listing);
+        printNotes(controller);
+        return EXIT_OK;
+    }
+
+    private void printListing(GeneratedListing l) {
+        out.println("Written by: " + (l.templateFallback() ? "template (AI unavailable)" : "AI")
+                + (l.editedByUser() ? ", edited by the seller" : ""));
+        out.println("Title:       " + l.title());
+        out.println("Price:       " + l.price());
+        out.println("Description: " + l.description());
+        l.highlights().forEach(h -> out.println("  + " + h));
+        l.maintenanceDetails().forEach(m -> out.println("  service: " + m));
+        out.println("Condition:   " + l.conditionDisclosure());
+        if (!l.seoKeywords().isEmpty()) {
+            out.println("Keywords:    " + String.join(", ", l.seoKeywords()));
+        }
+        l.report().ifPresent(r -> {
+            if (r.isValid()) {
+                out.println("Validation:  passed (defects disclosed, no banned claims, facts and price match)");
+            } else {
+                out.println("Validation:  FAILED");
+                r.violations().forEach(v -> out.println("  x " + v.message()));
+            }
+        });
+        out.println("Exportable:  " + (l.isExportable() ? "yes" + (l.validationOverridden() ? " (warnings overridden)" : "")
+                : "no - fix the problems or run 'avsa listing override'"));
+    }
+
+    private int export(AgentController controller, CliOptions o) {
+        Platform platform = parseEnum(Platform.class, "platform", o.required("platform"));
+        ExportedListing e = controller.exportListing(platform, o.option("out").map(Path::of).orElse(null));
+        out.println("---- " + platform.displayName() + " ----");
+        out.println(e.text());
+        out.println("----");
+        e.fields().forEach((name, value) -> e.profile().limitOf(name.equals(ListingExporter.TITLE) ? name : "")
+                .ifPresent(limit -> out.println(name + ": " + value.length() + " / " + limit + " characters")));
+        if (!e.trimmedSections().isEmpty()) {
+            out.println("Removed to fit: " + String.join(", ", e.trimmedSections()));
+        }
+        e.warnings().forEach(w -> out.println("Warning: " + w));
+        e.savedTo().ifPresent(p -> out.println("Saved to " + p));
+        printNotes(controller);
+        return EXIT_OK;
+    }
+
     /** The pre-demo check: key, model, and optionally one rehearsal live search. */
     private int doctor(AgentController controller, CliOptions o) {
         AppConfig cfg = config.get();
@@ -430,6 +497,10 @@ public final class AvsaCli implements EventListener {
         out.println("  comps search [--source seeded|live|csv] [--csv file] [--radius km] [--max n]");
         out.println("  price [--strategy max-profit|quick-sale] [--margin 0.05] [--spread 0.14] [--baseline N]");
         out.println("        [--accept] [--accept-ai 1,2]   accept the price, optionally with numbered AI proposals");
+        out.println("  listing generate [--tone professional|friendly|concise] [--no-features] [--no-maintenance]");
+        out.println("                   [--keywords \"a, b\"]");
+        out.println("  listing show|override    Show the latest listing, or accept its validation warnings");
+        out.println("  export --platform autotrader|kijiji|facebook-marketplace [--out file]");
         out.println();
         out.println("Options:");
         out.println("  --json       Also print the agent trace as JSON");

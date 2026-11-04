@@ -29,7 +29,7 @@ public final class KijijiExporter extends ListingExporter {
             fields.put(MAINTENANCE, "MAINTENANCE\n" + bullets(listing.maintenanceDetails()));
         }
         if (!listing.seoKeywords().isEmpty()) {
-            fields.put(KEYWORDS, String.join(" ", listing.seoKeywords()));
+            fields.put(KEYWORDS, "Keywords: " + String.join(", ", listing.seoKeywords()));
         }
         return fields;
     }

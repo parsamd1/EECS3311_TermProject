@@ -1,6 +1,7 @@
 package avsa.agent;
 
 import avsa.domain.ComparableListing;
+import avsa.domain.ListingOptions;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.VehicleFacts;
 import avsa.infrastructure.market.MarketQuery;
@@ -109,6 +110,67 @@ public final class PromptComposer {
         rec.adjustments().forEach(a -> user.append("\nAdjustment: ").append(a.label()).append(' ').append(a.amount()));
         rec.warnings().forEach(w -> user.append("\nWarning: ").append(w));
         return new LLMRequest("price-explanation", PRICE_EXPLANATION_SYSTEM, user.toString(), 8_000, null);
+    }
+
+    private static final String LISTING_SYSTEM = """
+            You write an honest used-vehicle listing for a private seller in Canada. Use only the facts given; \
+            never invent features, service history or condition. The condition disclosure must name every item \
+            in "Must disclose" in plain words, including its type and location. Do not use these claims: \
+            flawless, no issues, no problems, perfect condition, mint condition, like new; and do not claim the \
+            vehicle is accident-free unless the facts say the accident history is confirmed clean. State the year, \
+            make and model in the title, and the exact odometer reading in the description. Write the price only \
+            as the exact asking price given, or not at all. The description must be between 100 and 4000 \
+            characters.
+
+            Reply with only this JSON object:
+            {"title": "...", "description": "...", "highlights": ["..."], "conditionDisclosure": "...", \
+            "seoKeywords": ["..."]}
+            """;
+
+    /** A listing draft from redacted facts, with the defects that must be disclosed (F07). */
+    public LLMRequest listing(VehicleFacts facts, ListingOptions options) {
+        StringBuilder user = new StringBuilder("Facts (do not change them):")
+                .append("\n- Vehicle: ").append(facts.vehicleName())
+                .append("\n- Odometer: ").append(String.format(java.util.Locale.ROOT, "%,d", facts.odometerKm())).append(" km")
+                .append("\n- Body: ").append(lower(facts.bodyStyle())).append(", transmission: ").append(lower(facts.transmission()))
+                .append(", fuel: ").append(lower(facts.fuelType()))
+                .append("\n- Location: ").append(facts.city()).append(", ").append(facts.province())
+                .append("\n- Asking price: ").append(facts.price());
+        if (options.includeFeatures() && !facts.features().isEmpty()) {
+            user.append("\n- Features: ").append(String.join(", ", facts.features()));
+        }
+        if (options.includeMaintenance() && !facts.maintenanceRecords().isEmpty()) {
+            facts.maintenanceRecords().forEach(r -> user.append("\n- Service: ").append(r.date()).append(' ')
+                    .append(r.description()));
+        }
+        if (facts.ownerCount() != null) {
+            user.append("\n- Owners: ").append(facts.ownerCount());
+        }
+        user.append("\n- Accident history: ").append(!facts.accidentsKnown() ? "not confirmed"
+                : facts.accidentsReported() == 0 ? "confirmed, no reported accidents"
+                : facts.accidentsReported() + " reported accident(s)");
+        user.append("\nMust disclose:");
+        if (facts.defects().isEmpty() && facts.accidentsReported() == 0 && !facts.lienOutstanding()) {
+            user.append(" nothing recorded; say the seller has not recorded any defects.");
+        }
+        facts.defects().forEach(d -> user.append("\n- ").append(d.severity().name().toLowerCase()).append(' ')
+                .append(d.type().name().toLowerCase()).append(d.bodyLocation().isEmpty() ? "" : " on the "
+                + d.bodyLocation()).append(d.note().isEmpty() ? "" : " (" + d.note() + ")"));
+        if (facts.accidentsKnown() && facts.accidentsReported() > 0) {
+            user.append("\n- the reported accident history");
+        }
+        if (facts.lienOutstanding()) {
+            user.append("\n- an outstanding lien, to be cleared at sale");
+        }
+        user.append("\nTone: ").append(options.tone().name().toLowerCase());
+        if (!options.keywords().isEmpty()) {
+            user.append("\nInclude these search keywords where natural: ").append(String.join(", ", options.keywords()));
+        }
+        return new LLMRequest("listing-draft", LISTING_SYSTEM, user.toString(), 8_000, null);
+    }
+
+    private static String lower(Enum<?> value) {
+        return value == null ? "unknown" : value.name().toLowerCase();
     }
 
     /** A one-word request used by the pre-demo check. */

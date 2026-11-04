@@ -20,4 +20,9 @@ public interface AiTask<T> {
     }
 
     T fallback();
+
+    /** How many times the model is asked before the fallback is used; zero means the runner's default. */
+    default int maxAttempts() {
+        return 0;
+    }
 }
