@@ -4,6 +4,7 @@ import avsa.agent.AgentTrace;
 import avsa.agent.AiTaskRunner;
 import avsa.agent.ClaudeClient;
 import avsa.agent.LLMClient;
+import avsa.agent.MemoryManager;
 import avsa.agent.MockLLMClient;
 import avsa.agent.PromptComposer;
 import avsa.agent.ResponseParser;
@@ -23,6 +24,7 @@ import avsa.infrastructure.market.Gazetteer;
 import avsa.infrastructure.market.ListingCache;
 import avsa.infrastructure.market.LiveSearchSource;
 import avsa.infrastructure.market.MarketSources;
+import avsa.services.BuyerSimulator;
 import avsa.services.ClaimValidator;
 import avsa.services.DepreciationCalculator;
 import avsa.services.DepreciationRateTable;
@@ -87,6 +89,7 @@ public final class AvsaApplication {
                 new JsonSessionRepository(dataDir.resolve("sessions"), new JsonMapper(), new SchemaMigrator()), clock);
         EventBus events = new EventBus();
         events.subscribe(AgentEvent.class, new AutoSaveListener(sessions));
-        return new AgentController(sessions, tools, events, trace, validator, ai, liveConfigured, clock);
+        return new AgentController(sessions, tools, events, trace, validator, ai, liveConfigured,
+                new BuyerSimulator(ai, new MemoryManager(), clock), clock);
     }
 }

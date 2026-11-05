@@ -7,6 +7,8 @@ import avsa.agent.ToolArgs;
 import avsa.agent.ToolManager;
 import avsa.agent.ToolResult;
 import avsa.agent.tasks.ConnectionCheckTask;
+import avsa.domain.ChatTurn;
+import avsa.domain.CoachingReport;
 import avsa.domain.ComparableListing;
 import avsa.domain.DepreciationForecast;
 import avsa.domain.ExportedListing;
@@ -17,12 +19,14 @@ import avsa.domain.MarketSnapshot;
 import avsa.domain.Money;
 import avsa.domain.Offer;
 import avsa.domain.OfferEvaluation;
+import avsa.domain.Persona;
 import avsa.domain.Platform;
 import avsa.domain.PositioningReport;
 import avsa.domain.PriceAdjustment;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
 import avsa.domain.Session;
+import avsa.domain.SimulationSession;
 import avsa.domain.StrategyType;
 import avsa.domain.ValidationError;
 import avsa.domain.VehicleFacts;
@@ -31,6 +35,7 @@ import avsa.domain.VehicleProfile;
 import avsa.infrastructure.history.HistoryImportResult;
 import avsa.infrastructure.history.HistoryInput;
 import avsa.infrastructure.market.MarketSourceType;
+import avsa.services.BuyerSimulator;
 import avsa.services.ForecastInput;
 import avsa.services.ListingValidator;
 import avsa.services.PricingInput;
@@ -63,13 +68,15 @@ public final class AgentController {
     private final ListingValidator validator;
     private final AiTaskRunner ai;
     private final boolean liveSearchConfigured;
+    private final BuyerSimulator simulator;
     private final Clock clock;
     private List<String> lastNotes = List.of();
     private PricingInput lastPricingInput;
     private PriceRecommendation lastRecommendation;
 
     public AgentController(SessionService sessions, ToolManager tools, EventBus events, AgentTrace trace,
-                           ListingValidator validator, AiTaskRunner ai, boolean liveSearchConfigured, Clock clock) {
+                           ListingValidator validator, AiTaskRunner ai, boolean liveSearchConfigured,
+                           BuyerSimulator simulator, Clock clock) {
         this.sessions = sessions;
         this.tools = tools;
         this.events = events;
@@ -77,6 +84,7 @@ public final class AgentController {
         this.validator = validator;
         this.ai = ai;
         this.liveSearchConfigured = liveSearchConfigured;
+        this.simulator = simulator;
         this.clock = clock;
     }
 
@@ -239,6 +247,36 @@ public final class AgentController {
         session.setPositioning(report);
         events.publish(new SessionUpdated(clock.instant(), session.id(), "positioning"));
         return report;
+    }
+
+    /** Starts a practice negotiation about the latest listing; the buyer writes first (F09). */
+    public SimulationSession startSimulation(Persona persona) {
+        Session session = session();
+        SimulationSession simulation = simulator.start(persona, latestListing(session), facts(session),
+                activePrice(session).walkAwayFloor());
+        session.addSimulation(simulation);
+        events.publish(new SessionUpdated(clock.instant(), session.id(), "simulation"));
+        return simulation;
+    }
+
+    /** The seller's reply; returns the buyer's answer. Every turn is saved, so an abandoned chat is kept. */
+    public ChatTurn sendSellerMessage(String text) {
+        Session session = session();
+        ChatTurn buyer = simulator.reply(currentSimulation(session), facts(session), text);
+        events.publish(new SessionUpdated(clock.instant(), session.id(), "simulation"));
+        return buyer;
+    }
+
+    public CoachingReport endSimulation() {
+        Session session = session();
+        CoachingReport report = simulator.end(currentSimulation(session), facts(session));
+        events.publish(new SessionUpdated(clock.instant(), session.id(), "simulation"));
+        return report;
+    }
+
+    private static SimulationSession currentSimulation(Session session) {
+        return session.latestSimulation().orElseThrow(() ->
+                new IllegalStateException("No practice negotiation yet. Start one first."));
     }
 
     public OfferEvaluation evaluateOffer(Offer offer) {

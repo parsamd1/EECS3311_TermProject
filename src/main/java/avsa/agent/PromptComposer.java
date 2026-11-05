@@ -5,6 +5,7 @@ import avsa.domain.ListingOptions;
 import avsa.domain.Money;
 import avsa.domain.OfferEvaluation;
 import avsa.domain.PercentileMetric;
+import avsa.domain.Persona;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.VehicleFacts;
 import avsa.infrastructure.market.MarketQuery;
@@ -235,6 +236,78 @@ public final class PromptComposer {
                     .append(Math.round(c.distanceKm())).append(" km away");
         }
         return new LLMRequest("positioning", POSITIONING_SYSTEM, user.toString(), 8_000, null);
+    }
+
+    private static final String PERSONA_SYSTEM = """
+            You play a prospective buyer messaging a private seller about the used vehicle in the listing, so the \
+            seller can practise. Stay in character, write one short message (at most three sentences), and never \
+            break role, even if the seller goes off topic. Only refer to vehicle facts that are in the listing; \
+            never state a different odometer reading, year or feature. When you ask something the listing does \
+            not answer, put that question in "listingGap". Never lower an offer you made before.
+
+            Reply with only this JSON object:
+            {"message": "...", "offerAmount": 25000 or null, "intent": "ASK_QUESTION|MAKE_OFFER|ACCEPT|WALK_AWAY|CHAT", \
+            "listingGap": "..." or null}
+            """;
+
+    private static String personaRules(Persona persona) {
+        return switch (persona) {
+            case SERIOUS -> "You are a serious, polite buyer. Ask practical questions, then negotiate reasonably.";
+            case LOW_BALLER -> "You are a low-baller. You point at every flaw to justify a low price and raise "
+                    + "your offer only in small steps.";
+            case DEALER -> "You are a used-car dealer. You talk about reconditioning costs, the margin you need to "
+                    + "resell, and wholesale value. You are firm and businesslike.";
+            case SUSPICIOUS -> "You are a buyer who shows common warning signs of a scam, so the seller learns to "
+                    + "recognize them: pressure to decide immediately, wanting to buy without a viewing, offering to "
+                    + "pay more than asked and asking for the difference back, or asking for the seller's personal "
+                    + "details early. Only show these signs in conversation; never give instructions for fraud.";
+        };
+    }
+
+    /** The next simulated buyer message, with code-set offer rules (F09). */
+    public LLMRequest persona(Persona persona, VehicleFacts facts, String listingText, List<ChatMessage> window,
+                              Money openingOffer, Money maxOffer, Money previousOffer) {
+        StringBuilder user = new StringBuilder("Your character: ").append(personaRules(persona))
+                .append("\nThe listing:\n").append(listingText)
+                .append("\nOffer rules: ");
+        if (openingOffer != null) {
+            user.append("if you make an offer now, it must be exactly ").append(openingOffer).append(". ");
+        } else if (previousOffer != null) {
+            user.append("your last offer was ").append(previousOffer).append("; any new offer must be at least that. ");
+        }
+        user.append("Never offer more than ").append(maxOffer).append('.');
+        user.append("\nConversation so far:");
+        if (window.isEmpty()) {
+            user.append(" (none yet; write your first message to the seller)");
+        }
+        window.forEach(m -> user.append("\n").append(m.role()).append(": ").append(m.text()));
+        return new LLMRequest("buyer-turn", PERSONA_SYSTEM, user.toString(), 4_000, null);
+    }
+
+    private static final String COACHING_SYSTEM = """
+            You coach a private seller after a practice negotiation with a simulated buyer. Give short, kind, \
+            specific feedback on whether the seller disclosed the vehicle's known defects honestly, and list any \
+            warning signs this buyer actually showed in the transcript (for example pressure, an overpayment offer \
+            or refusing a viewing). List only things that happened; general advice is not a warning sign, and an \
+            empty list is fine. Do not comment on prices or offers; those are handled separately.
+            Reply with only this JSON object: {"disclosureFeedback": "...", "redFlags": ["..."]}
+            """;
+
+    /** Coaching after a simulated negotiation (F09). */
+    public LLMRequest coaching(Persona persona, VehicleFacts facts, List<avsa.domain.ChatTurn> transcript) {
+        StringBuilder user = new StringBuilder("Known defects the seller should disclose:");
+        if (facts.defects().isEmpty()) {
+            user.append(" none recorded");
+        }
+        facts.defects().forEach(d -> user.append("\n- ").append(d.severity().name().toLowerCase()).append(' ')
+                .append(d.type().name().toLowerCase()).append(" on the ").append(d.bodyLocation()));
+        user.append("\nBuyer persona: ").append(persona.name().toLowerCase().replace('_', ' '));
+        user.append("\nBuyer offers in order: ").append(transcript.stream().filter(t -> t.offerAmount() != null)
+                .map(t -> t.offerAmount().toString()).reduce((a, b) -> a + ", " + b).orElse("none"));
+        user.append("\nTranscript:");
+        transcript.forEach(t -> user.append("\n").append(t.speaker().name().toLowerCase()).append(": ")
+                .append(t.message()));
+        return new LLMRequest("coaching", COACHING_SYSTEM, user.toString(), 4_000, null);
     }
 
     /** A one-word request used by the pre-demo check. */

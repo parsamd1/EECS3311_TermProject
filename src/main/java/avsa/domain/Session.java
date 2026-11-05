@@ -29,6 +29,7 @@ public final class Session {
     private List<MarketSnapshot> snapshots = new ArrayList<>();
     private List<GeneratedListing> listings = new ArrayList<>();
     private PositioningReport positioning;
+    private List<SimulationSession> simulations = new ArrayList<>();
 
     public Session(UUID id, String name, VehicleProfile profile, Instant lastModified) {
         this.id = Objects.requireNonNull(id);
@@ -51,6 +52,12 @@ public final class Session {
     public List<GeneratedListing> listings() { return List.copyOf(listings); }
     public Optional<PositioningReport> positioning() { return Optional.ofNullable(positioning); }
     public void setPositioning(PositioningReport report) { this.positioning = report; }
+    public List<SimulationSession> simulations() { return List.copyOf(simulations); }
+    public void addSimulation(SimulationSession simulation) { simulations.add(simulation); }
+
+    public Optional<SimulationSession> latestSimulation() {
+        return simulations.isEmpty() ? Optional.empty() : Optional.of(simulations.get(simulations.size() - 1));
+    }
 
     public Optional<GeneratedListing> latestListing() {
         return listings.isEmpty() ? Optional.empty() : Optional.of(listings.get(listings.size() - 1));
@@ -101,6 +108,7 @@ public final class Session {
         copy.snapshots = new ArrayList<>(snapshots);
         copy.listings = new ArrayList<>(listings);
         copy.positioning = positioning;
+        copy.simulations = new ArrayList<>(simulations);
         return copy;
     }
 }

@@ -7,6 +7,8 @@ import avsa.application.EventListener;
 import avsa.application.SessionService;
 import avsa.domain.AccidentRecord;
 import avsa.domain.BodyStyle;
+import avsa.domain.ChatTurn;
+import avsa.domain.CoachingReport;
 import avsa.domain.Claim;
 import avsa.domain.ClaimKind;
 import avsa.domain.BuyerType;
@@ -25,6 +27,7 @@ import avsa.domain.ListingFlag;
 import avsa.domain.ListingOptions;
 import avsa.domain.Location;
 import avsa.domain.MarketSnapshot;
+import avsa.domain.Persona;
 import avsa.domain.Platform;
 import avsa.domain.PositioningReport;
 import avsa.domain.PriceAdjustment;
@@ -36,6 +39,9 @@ import avsa.domain.PricingParameters;
 import avsa.domain.Session;
 import avsa.domain.SessionSummary;
 import avsa.domain.Severity;
+import avsa.domain.SimulationSession;
+import avsa.domain.SimulationStatus;
+import avsa.domain.Speaker;
 import avsa.domain.StrategyType;
 import avsa.domain.Tone;
 import avsa.domain.Transmission;
@@ -82,7 +88,7 @@ public final class AvsaCli implements EventListener {
     private static final Set<String> FLAGS = Set.of("json", "accept", "live", "help", "version", "no-features",
             "no-maintenance", "confirm");
     private static final Set<String> COMMANDS = Set.of("profile", "session", "comps", "price", "doctor", "listing",
-            "export", "offer", "forecast", "history", "position");
+            "export", "offer", "forecast", "history", "position", "simulate");
 
     private final PrintStream out;
     private final PrintStream err;
@@ -155,6 +161,7 @@ public final class AvsaCli implements EventListener {
                 case "forecast" -> forecast(controller, options);
                 case "history" -> history(controller, options);
                 case "position" -> position(controller);
+                case "simulate" -> simulate(controller, options);
                 default -> {
                     err.println("Unknown command: " + command);
                     err.println("Run 'avsa --help' to see the available commands.");
@@ -468,6 +475,51 @@ public final class AvsaCli implements EventListener {
         return EXIT_OK;
     }
 
+    private int simulate(AgentController controller, CliOptions o) {
+        switch (o.word(1)) {
+            case "start" -> {
+                SimulationSession s = controller.startSimulation(parseEnum(Persona.class, "persona",
+                        o.option("persona").orElse("serious")));
+                out.println("Practising with a " + s.persona().name().toLowerCase().replace('_', '-') + " buyer. Asking "
+                        + s.askingPrice() + ", your floor " + s.floor() + ". Reply with: avsa simulate say \"...\"");
+                printTurn(s.transcript().get(0));
+            }
+            case "say" -> {
+                String text = o.word(2);
+                if (text.isBlank()) {
+                    throw new IllegalArgumentException("Put your message in quotes: avsa simulate say \"...\"");
+                }
+                ChatTurn buyer = controller.sendSellerMessage(text);
+                printTurn(buyer);
+                SimulationSession s = controller.sessions().current().latestSimulation().orElseThrow();
+                if (s.status() != SimulationStatus.ACTIVE) {
+                    out.println("The negotiation is over (" + s.status().name().toLowerCase().replace('_', ' ')
+                            + "). Run 'avsa simulate end' for coaching.");
+                }
+            }
+            case "end" -> {
+                CoachingReport r = controller.endSimulation();
+                SimulationSession s = controller.sessions().current().latestSimulation().orElseThrow();
+                out.println("Coaching" + (r.aiWritten() ? "" : " (template; AI unavailable)") + ":");
+                out.println("  Disclosure: " + r.disclosureFeedback());
+                out.println("  Your floor: " + r.floorFeedback());
+                r.redFlags().forEach(f -> out.println("  Warning sign: " + f));
+                s.listingGaps().forEach(g -> out.println("  The listing did not answer: " + g));
+            }
+            case "show" -> controller.sessions().current().latestSimulation().orElseThrow(() ->
+                    new IllegalStateException("No practice negotiation yet.")).transcript().forEach(this::printTurn);
+            default -> throw new IllegalArgumentException(
+                    "Use 'avsa simulate start --persona serious|low-baller|dealer|suspicious', 'say \"...\"', 'end' or 'show'.");
+        }
+        printNotes(controller);
+        return EXIT_OK;
+    }
+
+    private void printTurn(ChatTurn t) {
+        out.println((t.speaker() == Speaker.BUYER ? "Buyer: " : "You:   ") + t.message()
+                + t.offer().map(o -> "   [offer " + o + "]").orElse(""));
+    }
+
     private int forecast(AgentController controller, CliOptions o) {
         DepreciationForecast f = controller.forecast(Money.cad(o.intOption("holding", 0)));
         out.println("Starting from " + f.referencePrice() + " (" + f.segment().name().toLowerCase() + " rates), holding "
@@ -615,14 +667,15 @@ public final class AvsaCli implements EventListener {
     }
 
     private static <E extends Enum<E>> E parseEnum(Class<E> type, String option, String value) {
-        String name = value.strip().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
-        try {
-            return Enum.valueOf(type, name);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Unknown " + option + ": " + value + ". Use one of: "
-                    + String.join(", ", java.util.Arrays.stream(type.getEnumConstants())
-                    .map(c -> c.name().toLowerCase(Locale.ROOT).replace('_', '-')).toList()) + ".");
+        String letters = value.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT);
+        for (E constant : type.getEnumConstants()) {
+            if (constant.name().replace("_", "").equals(letters)) {
+                return constant;
+            }
         }
+        throw new IllegalArgumentException("Unknown " + option + ": " + value + ". Use one of: "
+                + String.join(", ", java.util.Arrays.stream(type.getEnumConstants())
+                .map(c -> c.name().toLowerCase(Locale.ROOT).replace('_', '-')).toList()) + ".");
     }
 
     private static String describe(VehicleProfile p) {
@@ -661,6 +714,8 @@ public final class AvsaCli implements EventListener {
         out.println("  offer add --amount N [--buyer dealer|private] [--notes \"what the buyer said\"]");
         out.println("  offer list");
         out.println("  position                 How the vehicle compares with the comparables, with evidence");
+        out.println("  simulate start [--persona serious|low-baller|dealer|suspicious]   Practise with an AI buyer");
+        out.println("  simulate say \"message\" | end | show");
         out.println();
         out.println("Options:");
         out.println("  --json       Also print the agent trace as JSON");
