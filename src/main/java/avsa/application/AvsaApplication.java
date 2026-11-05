@@ -23,11 +23,13 @@ import avsa.infrastructure.market.Gazetteer;
 import avsa.infrastructure.market.ListingCache;
 import avsa.infrastructure.market.LiveSearchSource;
 import avsa.infrastructure.market.MarketSources;
+import avsa.services.ClaimValidator;
 import avsa.services.DepreciationCalculator;
 import avsa.services.DepreciationRateTable;
 import avsa.services.ExporterFactory;
 import avsa.services.ListingValidator;
 import avsa.services.OfferEvaluator;
+import avsa.services.PositioningAnalyzer;
 import avsa.services.PricingEngine;
 import avsa.services.TemplateListingWriter;
 import avsa.tools.ExportTool;
@@ -36,6 +38,7 @@ import avsa.tools.HistoryImportTool;
 import avsa.tools.ListingTool;
 import avsa.tools.MarketSearchTool;
 import avsa.tools.OfferEvaluationTool;
+import avsa.tools.PositioningTool;
 import avsa.tools.PricingTool;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -78,6 +81,7 @@ public final class AvsaApplication {
         tools.register(new ListingTool(ai, new TemplateListingWriter(), validator));
         tools.register(new ExportTool(new ExporterFactory(new PlatformProfileLoader(), clock)));
         tools.register(new OfferEvaluationTool(ai, new OfferEvaluator()));
+        tools.register(new PositioningTool(ai, new PositioningAnalyzer(), new ClaimValidator()));
 
         SessionService sessions = new SessionService(
                 new JsonSessionRepository(dataDir.resolve("sessions"), new JsonMapper(), new SchemaMigrator()), clock);

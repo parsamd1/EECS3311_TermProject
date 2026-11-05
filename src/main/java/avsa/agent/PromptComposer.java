@@ -4,6 +4,7 @@ import avsa.domain.ComparableListing;
 import avsa.domain.ListingOptions;
 import avsa.domain.Money;
 import avsa.domain.OfferEvaluation;
+import avsa.domain.PercentileMetric;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.VehicleFacts;
 import avsa.infrastructure.market.MarketQuery;
@@ -199,6 +200,41 @@ public final class PromptComposer {
         comparables.stream().limit(3).forEach(c -> user.append("\nComparable: ").append(c.year()).append(' ')
                 .append(c.trim()).append(", ").append(c.odometerKm()).append(" km, listed at ").append(c.askingPrice()));
         return new LLMRequest("counter-script", COUNTER_SCRIPT_SYSTEM, user.toString(), 4_000, null);
+    }
+
+    private static final String POSITIONING_SYSTEM = """
+            You help a private seller in Canada understand how their used vehicle compares with similar listings. \
+            Use only the metrics and comparables given. Write short claims of these kinds: ADVANTAGE, WEAKNESS, \
+            REMEDY (how to address a weakness) and TALKING_POINT (something to tell buyers). Every claim must cite \
+            its evidence: comparables by label (C1, C2...) and metrics as metric:price, metric:odometer or \
+            metric:year. Only state numbers that appear in the data, and only compare with the comparables you \
+            cite. Add a two-sentence price justification using the asking price and the comparables.
+
+            Reply with only this JSON object:
+            {"claims": [{"kind": "ADVANTAGE", "text": "...", "evidence": ["C1", "metric:odometer"]}], \
+            "priceJustification": "..."}
+            """;
+
+    /** Positioning claims from computed metrics and the top comparables (F05). */
+    public LLMRequest positioning(List<PercentileMetric> metrics, List<ComparableListing> top, VehicleFacts facts,
+                                  PriceRecommendation price) {
+        StringBuilder user = new StringBuilder("Seller's vehicle: ").append(facts.vehicleName()).append(", ")
+                .append(facts.odometerKm()).append(" km, asking ").append(price.askingPrice())
+                .append(facts.features().isEmpty() ? "" : ", features: " + String.join(", ", facts.features()));
+        facts.defects().forEach(d -> user.append(", ").append(d.severity().name().toLowerCase()).append(' ')
+                .append(d.type().name().toLowerCase()).append(" on the ").append(d.bodyLocation()));
+        user.append("\nMetrics (percentile = share of comparables with a lower value):");
+        metrics.forEach(m -> user.append("\n- metric:").append(m.name()).append(" value ").append(m.value())
+                .append(", percentile ").append(m.percentile()).append(m.betterWhenLower() ? " (lower is better)"
+                        : " (higher is better)"));
+        user.append("\nComparables:");
+        for (int i = 0; i < top.size(); i++) {
+            ComparableListing c = top.get(i);
+            user.append("\n- C").append(i + 1).append(": ").append(c.year()).append(' ').append(c.trim()).append(", ")
+                    .append(c.odometerKm()).append(" km, listed at ").append(c.askingPrice()).append(", ")
+                    .append(Math.round(c.distanceKm())).append(" km away");
+        }
+        return new LLMRequest("positioning", POSITIONING_SYSTEM, user.toString(), 8_000, null);
     }
 
     /** A one-word request used by the pre-demo check. */

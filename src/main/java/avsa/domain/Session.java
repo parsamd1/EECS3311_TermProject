@@ -28,6 +28,7 @@ public final class Session {
     private List<OfferEvaluation> offerLog = new ArrayList<>();
     private List<MarketSnapshot> snapshots = new ArrayList<>();
     private List<GeneratedListing> listings = new ArrayList<>();
+    private PositioningReport positioning;
 
     public Session(UUID id, String name, VehicleProfile profile, Instant lastModified) {
         this.id = Objects.requireNonNull(id);
@@ -48,6 +49,8 @@ public final class Session {
     public List<OfferEvaluation> offerLog() { return List.copyOf(offerLog); }
     public List<MarketSnapshot> snapshots() { return List.copyOf(snapshots); }
     public List<GeneratedListing> listings() { return List.copyOf(listings); }
+    public Optional<PositioningReport> positioning() { return Optional.ofNullable(positioning); }
+    public void setPositioning(PositioningReport report) { this.positioning = report; }
 
     public Optional<GeneratedListing> latestListing() {
         return listings.isEmpty() ? Optional.empty() : Optional.of(listings.get(listings.size() - 1));
@@ -97,6 +100,7 @@ public final class Session {
         copy.offerLog = new ArrayList<>(offerLog);
         copy.snapshots = new ArrayList<>(snapshots);
         copy.listings = new ArrayList<>(listings);
+        copy.positioning = positioning;
         return copy;
     }
 }

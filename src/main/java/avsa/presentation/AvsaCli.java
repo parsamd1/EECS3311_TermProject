@@ -7,6 +7,8 @@ import avsa.application.EventListener;
 import avsa.application.SessionService;
 import avsa.domain.AccidentRecord;
 import avsa.domain.BodyStyle;
+import avsa.domain.Claim;
+import avsa.domain.ClaimKind;
 import avsa.domain.BuyerType;
 import avsa.domain.ComparableListing;
 import avsa.domain.ConditionReport;
@@ -24,6 +26,7 @@ import avsa.domain.ListingOptions;
 import avsa.domain.Location;
 import avsa.domain.MarketSnapshot;
 import avsa.domain.Platform;
+import avsa.domain.PositioningReport;
 import avsa.domain.PriceAdjustment;
 import avsa.domain.Money;
 import avsa.domain.Offer;
@@ -57,6 +60,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -78,7 +82,7 @@ public final class AvsaCli implements EventListener {
     private static final Set<String> FLAGS = Set.of("json", "accept", "live", "help", "version", "no-features",
             "no-maintenance", "confirm");
     private static final Set<String> COMMANDS = Set.of("profile", "session", "comps", "price", "doctor", "listing",
-            "export", "offer", "forecast", "history");
+            "export", "offer", "forecast", "history", "position");
 
     private final PrintStream out;
     private final PrintStream err;
@@ -150,6 +154,7 @@ public final class AvsaCli implements EventListener {
                 case "offer" -> offer(controller, options);
                 case "forecast" -> forecast(controller, options);
                 case "history" -> history(controller, options);
+                case "position" -> position(controller);
                 default -> {
                     err.println("Unknown command: " + command);
                     err.println("Run 'avsa --help' to see the available commands.");
@@ -430,6 +435,39 @@ public final class AvsaCli implements EventListener {
         return EXIT_OK;
     }
 
+    private int position(AgentController controller) {
+        PositioningReport r = controller.analyzePositioning();
+        out.println("Metrics (percentile = share of comparables below yours):");
+        r.metrics().forEach(m -> out.println(String.format(Locale.ROOT, "  %-9s %8s   %5.1f%%   (%s is better)",
+                m.name(), m.name().equals("year") ? String.valueOf((int) m.value())
+                        : String.format(Locale.ROOT, "%,.0f", m.value()), m.percentile(),
+                m.betterWhenLower() ? "lower" : "higher")));
+        Map<ClaimKind, String> headings = Map.of(ClaimKind.ADVANTAGE, "Advantages", ClaimKind.WEAKNESS, "Weaknesses",
+                ClaimKind.REMEDY, "How to address them", ClaimKind.TALKING_POINT, "Talking points");
+        for (ClaimKind kind : ClaimKind.values()) {
+            List<Claim> claims = r.claims(kind);
+            if (!claims.isEmpty()) {
+                out.println(headings.get(kind) + ":");
+                claims.forEach(c -> out.println("  - " + c.text()));
+            }
+        }
+        if (!r.priceJustification().isBlank()) {
+            out.println("Price justification: " + r.priceJustification());
+        }
+        List<ComparableListing> top = controller.sessions().current().latestSnapshot().map(MarketSnapshot::rankedListings)
+                .orElse(List.of()).stream().filter(c -> !c.excluded()).limit(5).toList();
+        if (!r.metricsOnly() && !top.isEmpty()) {
+            out.println("Comparables cited:");
+            for (int i = 0; i < top.size(); i++) {
+                ComparableListing c = top.get(i);
+                out.println(String.format(Locale.ROOT, "  C%d = %d %s, %,d km, %s (%s)", i + 1, c.year(), c.trim(),
+                        c.odometerKm(), c.askingPrice(), c.source()));
+            }
+        }
+        r.notices().forEach(n -> out.println("Note: " + n));
+        return EXIT_OK;
+    }
+
     private int forecast(AgentController controller, CliOptions o) {
         DepreciationForecast f = controller.forecast(Money.cad(o.intOption("holding", 0)));
         out.println("Starting from " + f.referencePrice() + " (" + f.segment().name().toLowerCase() + " rates), holding "
@@ -622,6 +660,7 @@ public final class AvsaCli implements EventListener {
         out.println("  forecast [--holding 150]  Value at 3, 6 and 12 months and when waiting stops paying off");
         out.println("  offer add --amount N [--buyer dealer|private] [--notes \"what the buyer said\"]");
         out.println("  offer list");
+        out.println("  position                 How the vehicle compares with the comparables, with evidence");
         out.println();
         out.println("Options:");
         out.println("  --json       Also print the agent trace as JSON");

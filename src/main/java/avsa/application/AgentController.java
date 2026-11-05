@@ -18,6 +18,7 @@ import avsa.domain.Money;
 import avsa.domain.Offer;
 import avsa.domain.OfferEvaluation;
 import avsa.domain.Platform;
+import avsa.domain.PositioningReport;
 import avsa.domain.PriceAdjustment;
 import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
@@ -40,6 +41,7 @@ import avsa.tools.HistoryImportTool;
 import avsa.tools.ListingTool;
 import avsa.tools.MarketSearchTool;
 import avsa.tools.OfferEvaluationTool;
+import avsa.tools.PositioningTool;
 import avsa.tools.PricingTool;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -224,6 +226,19 @@ public final class AgentController {
     public ExportedListing exportListing(Platform platform, Path out) {
         return run(ExportTool.NAME, ToolArgs.of("listing", latestListing(session()), "platform", platform, "out", out))
                 .valueAs(ExportedListing.class);
+    }
+
+    /** Compares the vehicle with the latest comparables at the active price (F05). */
+    public PositioningReport analyzePositioning() {
+        Session session = session();
+        List<ComparableListing> comps = session.latestSnapshot().map(MarketSnapshot::rankedListings).orElseThrow(() ->
+                new IllegalStateException("No comparables yet. Find comparables first."));
+        PositioningReport report = run(PositioningTool.NAME, ToolArgs.of("profile", session.activeProfile(),
+                "facts", facts(session), "price", activePrice(session), "comparables", comps))
+                .valueAs(PositioningReport.class);
+        session.setPositioning(report);
+        events.publish(new SessionUpdated(clock.instant(), session.id(), "positioning"));
+        return report;
     }
 
     public OfferEvaluation evaluateOffer(Offer offer) {
