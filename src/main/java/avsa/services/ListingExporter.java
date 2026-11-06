@@ -117,7 +117,8 @@ public abstract class ListingExporter {
                 .reduce((a, b) -> a + SECTION_BREAK + b).orElse("");
     }
 
-    private static int bodyLength(Map<String, String> fields) {
+    /** Characters in the platform's description box: every body section and the breaks between them. */
+    public static int bodyLength(Map<String, String> fields) {
         return body(fields, BODY_FIELDS).length();
     }
 

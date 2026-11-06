@@ -44,7 +44,7 @@ public class MainWindow extends Application implements EventListener {
     private GuiContext ctx;
     private CurrentSessionFile currentSession;
     private final Label vehicleStatus = new Label();
-    private final Label saveStatus = new Label("No changes yet");
+    private final Label saveStatus = new Label("All changes saved");
     private final Label aiStatus = new Label();
     private final Label notes = Ui.text("");
     private final Label busyMessage = Ui.text("");
@@ -75,7 +75,8 @@ public class MainWindow extends Application implements EventListener {
             }
         }, this::showNotes, this::refreshAll);
 
-        tabs.addAll(List.of(new VehicleTab(ctx), new MarketTab(ctx), new PricingTab(ctx), new SessionsTab(ctx)));
+        tabs.addAll(List.of(new VehicleTab(ctx), new HistoryTab(ctx), new MarketTab(ctx), new PricingTab(ctx),
+                new ForecastTab(ctx), new ListingTab(ctx), new ExportTab(ctx), new OffersTab(ctx), new SessionsTab(ctx)));
         tabPane = new TabPane();
         for (FeatureTab feature : tabs) {
             ScrollPane scroll = new ScrollPane(feature.content());
