@@ -95,6 +95,15 @@ public final class Session {
     public void setForecast(DepreciationForecast newForecast) { this.forecast = newForecast; }
     public void addOffer(OfferEvaluation evaluation) { offerLog.add(evaluation); }
     public void addSnapshot(MarketSnapshot snapshot) { snapshots.add(snapshot); }
+
+    /** The seller pinned or excluded a comparable: the latest snapshot is re-ranked and the active price is out of date (F02). */
+    public void replaceLatestSnapshot(MarketSnapshot snapshot) {
+        if (snapshots.isEmpty()) {
+            throw new IllegalStateException("No market snapshot to replace.");
+        }
+        snapshots.set(snapshots.size() - 1, snapshot);
+        activePrice().ifPresent(PriceRecommendation::markStale);
+    }
     public void addListing(GeneratedListing listing) { listings.add(listing); }
 
     /** A copy under a new id and name that shares this session's results. */

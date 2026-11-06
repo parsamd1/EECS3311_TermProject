@@ -51,9 +51,11 @@ import avsa.tools.PricingTool;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * Facade: the single entry point for the GUI and the CLI. It reads and updates the current
@@ -134,6 +136,44 @@ public final class AgentController {
         session.addSnapshot(snapshot);
         events.publish(new MarketDataReady(clock.instant(), session.id()));
         return snapshot;
+    }
+
+    /** The seller leaves a comparable out of pricing and positioning, or puts it back (F02). */
+    public MarketSnapshot excludeComparable(String listingId, boolean excluded) {
+        return changeComparable(listingId, listing -> {
+            listing.setExcluded(excluded);
+            if (excluded) {
+                listing.setPinned(false);
+            }
+        });
+    }
+
+    /** A pinned comparable is never excluded and is ranked first, so positioning always cites it (F02). */
+    public MarketSnapshot pinComparable(String listingId, boolean pinned) {
+        return changeComparable(listingId, listing -> {
+            listing.setPinned(pinned);
+            if (pinned) {
+                listing.setExcluded(false);
+            }
+        });
+    }
+
+    private MarketSnapshot changeComparable(String listingId, Consumer<ComparableListing> change) {
+        Session session = session();
+        MarketSnapshot snapshot = session.latestSnapshot().orElseThrow(() ->
+                new IllegalStateException("No comparables yet. Find comparables first."));
+        ComparableListing listing = snapshot.rankedListings().stream().filter(l -> l.listingId().equals(listingId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("No comparable with id " + listingId));
+        change.accept(listing);
+        List<ComparableListing> ranked = snapshot.rankedListings().stream()
+                .sorted(Comparator.comparing((ComparableListing l) -> !l.pinned())
+                        .thenComparing(ComparableListing::excluded)
+                        .thenComparing(ComparableListing::score, Comparator.reverseOrder()))
+                .toList();
+        MarketSnapshot updated = snapshot.withListings(ranked);
+        session.replaceLatestSnapshot(updated);
+        events.publish(new SessionUpdated(clock.instant(), session.id(), "comparables"));
+        return updated;
     }
 
     /** Reads a history report; nothing is stored until the seller confirms it. */

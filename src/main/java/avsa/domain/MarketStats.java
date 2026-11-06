@@ -3,11 +3,11 @@ package avsa.domain;
 import java.util.Comparator;
 import java.util.List;
 
-/** Count, minimum, median and maximum asking price of a set of listings. */
+/** Count, minimum, median and maximum asking price of a set of listings; listings the seller excluded are left out. */
 public record MarketStats(int count, Money min, Money median, Money max) {
 
     public static MarketStats of(List<ComparableListing> listings) {
-        List<Money> prices = listings.stream().map(ComparableListing::askingPrice)
+        List<Money> prices = listings.stream().filter(l -> !l.excluded()).map(ComparableListing::askingPrice)
                 .sorted(Comparator.naturalOrder()).toList();
         if (prices.isEmpty()) {
             return new MarketStats(0, Money.ZERO, Money.ZERO, Money.ZERO);

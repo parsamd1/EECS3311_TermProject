@@ -6,7 +6,9 @@ import avsa.domain.SessionSummary;
 import avsa.domain.SnapshotComparison;
 import avsa.domain.VehicleProfile;
 import avsa.infrastructure.SessionRepository;
+import java.nio.file.Path;
 import java.time.Clock;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -99,6 +101,19 @@ public final class SessionService {
     private MarketSnapshot snapshot(UUID id) {
         return current().snapshots().stream().filter(s -> s.id().equals(id)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("No market snapshot with id " + id));
+    }
+
+    /**
+     * Copies all saved sessions into a new dated folder inside {@code folder} (F10).
+     *
+     * @return the folder the backup was written to
+     */
+    public Path backup(Path folder) {
+        saveCurrent();
+        String stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(clock.getZone()).format(clock.instant());
+        Path target = folder.resolve("avsa-backup-" + stamp);
+        repository.backup(target);
+        return target;
     }
 
     /** True while a disk error is keeping data in memory; the seller should be warned. */

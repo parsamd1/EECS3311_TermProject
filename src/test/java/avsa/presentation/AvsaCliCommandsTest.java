@@ -158,4 +158,24 @@ class AvsaCliCommandsTest {
         assertEquals(AvsaCli.EXIT_OK, run(null, "comps", "search", "--json"));
         assertTrue(output().contains("\"kind\" : \"TOOL_CALL\""));
     }
+
+    @Test
+    void comparablesCanBeExcludedAndPinnedAndSearchesCompared() {
+        run(null, PROFILE);
+        run(null, "comps", "search");
+        assertEquals(AvsaCli.EXIT_OK, run(null, "comps", "exclude", "1"));
+        assertTrue(output().contains("EXCLUDED"));
+        assertTrue(output().contains("7 listings"));
+        assertEquals(AvsaCli.EXIT_OK, run(null, "comps", "pin", "8"));
+        assertTrue(output().contains("PINNED"));
+        assertTrue(output().contains("8 listings"), "pinning puts an excluded listing back");
+        assertEquals(AvsaCli.EXIT_USAGE, run(null, "comps", "pin", "9"));
+
+        assertEquals(AvsaCli.EXIT_ERROR, run(null, "session", "compare"));
+        run(null, "comps", "search", "--radius", "50");
+        assertEquals(AvsaCli.EXIT_OK, run(null, "session", "compare"));
+        assertTrue(output().contains("median"));
+        assertEquals(AvsaCli.EXIT_OK, run(null, "session", "backup", "--to", dir.resolve("bk").toString()));
+        assertTrue(output().contains("Backed up to"));
+    }
 }

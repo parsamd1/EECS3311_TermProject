@@ -38,6 +38,7 @@ import avsa.domain.PriceRecommendation;
 import avsa.domain.PricingParameters;
 import avsa.domain.Session;
 import avsa.domain.SessionSummary;
+import avsa.domain.SnapshotComparison;
 import avsa.domain.Severity;
 import avsa.domain.SimulationSession;
 import avsa.domain.SimulationStatus;
@@ -254,14 +255,53 @@ public final class AvsaCli implements EventListener {
                 sessions.delete(UUID.fromString(o.word(2)));
                 out.println("Deleted.");
             }
-            default -> throw new IllegalArgumentException("Use 'avsa session list|load <id>|delete <id>'.");
+            case "rename" -> {
+                sessions.rename(UUID.fromString(o.word(2)), o.required("name"));
+                out.println("Renamed.");
+            }
+            case "duplicate" -> out.println("Copied as " + sessions.duplicate(UUID.fromString(o.word(2))).id());
+            case "backup" -> out.println("Backed up to " + sessions.backup(Path.of(o.option("to").orElse(
+                    dataDir.resolve("backups").toString()))));
+            case "compare" -> {
+                List<MarketSnapshot> snaps = sessions.current().snapshots();
+                if (snaps.size() < 2) {
+                    throw new IllegalStateException("Comparing needs two market snapshots; run 'avsa comps search' again.");
+                }
+                SnapshotComparison c = sessions.compare(snaps.get(snaps.size() - 2).id(), snaps.get(snaps.size() - 1).id());
+                out.println("From " + c.first().takenAt() + " (" + c.first().sourceName() + ") to " + c.second().takenAt()
+                        + " (" + c.second().sourceName() + "):");
+                out.println("  median " + c.first().stats().median() + " -> " + c.second().stats().median()
+                        + " (change " + c.medianChange() + ")");
+                out.println("  listings " + c.first().stats().count() + " -> " + c.second().stats().count() + ", "
+                        + c.addedListings().size() + " new, " + c.removedListings().size() + " gone");
+            }
+            default -> throw new IllegalArgumentException(
+                    "Use 'avsa session list|load <id>|delete <id>|rename <id> --name N|duplicate <id>|backup [--to dir]|compare'.");
         }
         return EXIT_OK;
     }
 
     private int comps(AgentController controller, CliOptions o) {
-        if (!o.word(1).equals("search")) {
-            throw new IllegalArgumentException("Use 'avsa comps search [--source seeded|live|csv] [--radius km]'.");
+        String action = o.word(1);
+        if (Set.of("exclude", "include", "pin", "unpin").contains(action)) {
+            List<ComparableListing> ranked = controller.sessions().current().latestSnapshot().orElseThrow(() ->
+                    new IllegalStateException("No comparables yet. Run 'avsa comps search'.")).rankedListings();
+            int n = CliOptions.parseInt("listing number", o.word(2));
+            if (n < 1 || n > ranked.size()) {
+                throw new IllegalArgumentException("There is no comparable " + n + ".");
+            }
+            String id = ranked.get(n - 1).listingId();
+            MarketSnapshot s = switch (action) {
+                case "exclude", "include" -> controller.excludeComparable(id, action.equals("exclude"));
+                default -> controller.pinComparable(id, action.equals("pin"));
+            };
+            printSnapshot(s);
+            out.println("Run 'avsa price' again: the active price no longer matches the comparables.");
+            return EXIT_OK;
+        }
+        if (!action.equals("search")) {
+            throw new IllegalArgumentException("Use 'avsa comps search [--source seeded|live|csv] [--radius km]' or "
+                    + "'avsa comps exclude|include|pin|unpin <#>'.");
         }
         MarketSourceType source = parseEnum(MarketSourceType.class, "source", o.option("source").orElse("seeded"));
         if (source == MarketSourceType.LIVE) {
@@ -302,11 +342,18 @@ public final class AvsaCli implements EventListener {
     }
 
     private static String flags(ComparableListing l) {
-        if (!l.reviewed()) {
-            return "unreviewed";
+        List<String> marks = new ArrayList<>();
+        if (l.pinned()) {
+            marks.add("PINNED");
         }
-        return l.flags().isEmpty() ? "" : String.join(", ", l.flags().stream().map(ListingFlag::code)
-                .map(Enum::name).toList());
+        if (l.excluded()) {
+            marks.add("EXCLUDED");
+        }
+        if (!l.reviewed()) {
+            marks.add("unreviewed");
+        }
+        l.flags().forEach(f -> marks.add(f.code().name()));
+        return String.join(", ", marks);
     }
 
     private int price(AgentController controller, CliOptions o) {
@@ -642,25 +689,12 @@ public final class AvsaCli implements EventListener {
     }
 
     private void restoreCurrentSession(SessionService sessions) {
-        Path pointer = dataDir.resolve("current-session");
-        try {
-            if (Files.isReadable(pointer)) {
-                sessions.open(UUID.fromString(Files.readString(pointer, StandardCharsets.UTF_8).strip()));
-            }
-        } catch (IOException | RuntimeException e) {
-            // The remembered session is gone or unreadable; commands start without one.
-        }
+        new CurrentSessionFile(dataDir).restore(sessions);
     }
 
     private void rememberCurrentSession(SessionService sessions) {
-        Path pointer = dataDir.resolve("current-session");
         try {
-            Files.createDirectories(dataDir);
-            if (sessions.hasCurrent()) {
-                Files.writeString(pointer, sessions.current().id().toString(), StandardCharsets.UTF_8);
-            } else {
-                Files.deleteIfExists(pointer);
-            }
+            new CurrentSessionFile(dataDir).remember(sessions);
         } catch (IOException e) {
             err.println("Could not remember the current session: " + e.getMessage());
         }
@@ -700,8 +734,10 @@ public final class AvsaCli implements EventListener {
         out.println("              [--trim T] [--transmission automatic] [--fuel gasoline] [--features \"a, b\"]");
         out.println("              [--defect scratch:rear door:minor]");
         out.println("  profile show             Show the current vehicle");
-        out.println("  session list|load <id>|delete <id>");
+        out.println("  session list|load <id>|delete <id>|rename <id> --name N|duplicate <id>");
+        out.println("  session backup [--to folder] | compare   Back up all sessions, or compare the last two searches");
         out.println("  comps search [--source seeded|live|csv] [--csv file] [--radius km] [--max n]");
+        out.println("  comps exclude|include|pin|unpin <#>   Leave a comparable out of pricing, or always use it");
         out.println("  price [--strategy max-profit|quick-sale] [--margin 0.05] [--spread 0.14] [--baseline N]");
         out.println("        [--accept] [--accept-ai 1,2]   accept the price, optionally with numbered AI proposals");
         out.println("  listing generate [--tone professional|friendly|concise] [--no-features] [--no-maintenance]");

@@ -205,4 +205,49 @@ class AgentControllerTest {
         bus.publish(new PriceRecommended(CLOCK.instant(), java.util.UUID.randomUUID()));
         assertEquals(List.of("price", "any", "any", "any"), got);
     }
+
+    @Test
+    void excludingAComparableLeavesItOutOfTheStatsAndMarksThePriceStale() {
+        AgentController c = controller();
+        c.saveProfile(cx5());
+        llm.thenRespond("{\"flags\": []}");
+        MarketSnapshot before = c.findComparables(SearchRequest.defaults(), MarketSourceType.SEEDED, null);
+        c.acceptPrice(c.recommendPrice(StrategyType.MAX_PROFIT, PricingParameters.defaults(), null));
+        String top = before.rankedListings().get(0).listingId();
+
+        MarketSnapshot after = c.excludeComparable(top, true);
+
+        assertEquals(before.stats().count() - 1, after.stats().count());
+        assertEquals(top, after.rankedListings().get(after.rankedListings().size() - 1).listingId());
+        assertTrue(c.sessions().current().activePrice().orElseThrow().stale());
+        assertEquals(1, c.sessions().current().snapshots().size());
+        assertEquals(before.stats().count(), c.excludeComparable(top, false).stats().count());
+    }
+
+    @Test
+    void aPinnedComparableRanksFirstAndCannotStayExcluded() {
+        AgentController c = controller();
+        c.saveProfile(cx5());
+        llm.thenRespond("{\"flags\": []}");
+        MarketSnapshot before = c.findComparables(SearchRequest.defaults(), MarketSourceType.SEEDED, null);
+        String last = before.rankedListings().get(before.rankedListings().size() - 1).listingId();
+        c.excludeComparable(last, true);
+
+        MarketSnapshot after = c.pinComparable(last, true);
+
+        assertEquals(last, after.rankedListings().get(0).listingId());
+        assertTrue(after.rankedListings().get(0).pinned());
+        assertFalse(after.rankedListings().get(0).excluded());
+        assertThrows(IllegalArgumentException.class, () -> c.pinComparable("no-such-id", true));
+    }
+
+    @Test
+    void aBackupCopiesEverySavedSessionIntoADatedFolder() throws Exception {
+        AgentController c = controller();
+        c.saveProfile(cx5());
+        Path backup = c.sessions().backup(dir.resolve("backups"));
+
+        assertEquals("avsa-backup-20261103-120000", backup.getFileName().toString());
+        assertTrue(java.nio.file.Files.exists(backup.resolve(c.sessions().current().id() + ".json")));
+    }
 }

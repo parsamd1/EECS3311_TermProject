@@ -141,6 +141,26 @@ public final class JsonSessionRepository implements SessionRepository {
     }
 
     @Override
+    public int backup(Path target) {
+        pending.values().removeIf(this::tryWrite);
+        int copied = 0;
+        try {
+            Files.createDirectories(target);
+            if (Files.isDirectory(dataDir)) {
+                try (DirectoryStream<Path> files = Files.newDirectoryStream(dataDir, "*.json")) {
+                    for (Path file : files) {
+                        Files.copy(file, target.resolve(file.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                        copied++;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new SessionLoadException("The backup could not be written to " + target + ": " + e.getMessage(), e);
+        }
+        return copied;
+    }
+
+    @Override
     public int pendingWrites() {
         return pending.size();
     }

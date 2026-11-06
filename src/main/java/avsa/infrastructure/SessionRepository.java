@@ -2,6 +2,7 @@ package avsa.infrastructure;
 
 import avsa.domain.Session;
 import avsa.domain.SessionSummary;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,6 +19,13 @@ public interface SessionRepository {
     List<SessionSummary> list();
 
     void delete(UUID id);
+
+    /**
+     * Copies every saved session file into {@code target}, which is created if needed.
+     *
+     * @return the number of sessions copied
+     */
+    int backup(Path target);
 
     /** Number of sessions waiting to be written after a disk error. */
     int pendingWrites();
