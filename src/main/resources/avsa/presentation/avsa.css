@@ -1,0 +1,22 @@
+.root { -fx-font-size: 13px; }
+.heading { -fx-font-size: 17px; -fx-font-weight: bold; }
+.muted { -fx-text-fill: #666666; }
+.warning { -fx-text-fill: #9a5b00; }
+.error { -fx-text-fill: #b00020; }
+.ok { -fx-text-fill: #1e7a34; }
+.card { -fx-border-color: #d0d0d0; -fx-border-radius: 6; -fx-background-color: #fafafa; -fx-background-radius: 6;
+        -fx-padding: 10; }
+.card-title { -fx-font-weight: bold; -fx-font-size: 14px; }
+.badge-ai { -fx-background-color: #5b3cc4; -fx-text-fill: white; -fx-padding: 1 6 1 6; -fx-background-radius: 8;
+            -fx-font-size: 11px; -fx-font-weight: bold; }
+.badge-fallback { -fx-background-color: #f2c94c; -fx-text-fill: #3d2f00; -fx-padding: 1 6 1 6;
+                  -fx-background-radius: 8; -fx-font-size: 11px; -fx-font-weight: bold; }
+.status-bar { -fx-background-color: #eeeeee; -fx-padding: 4 10 4 10; -fx-border-color: #d0d0d0;
+              -fx-border-width: 1 0 0 0; }
+.notes-bar { -fx-background-color: #fff4d6; -fx-padding: 6 10 6 10; }
+.busy-overlay { -fx-background-color: rgba(255, 255, 255, 0.75); }
+.busy-box { -fx-background-color: white; -fx-border-color: #c0c0c0; -fx-padding: 20; -fx-background-radius: 8;
+            -fx-border-radius: 8; }
+.big-number { -fx-font-size: 20px; -fx-font-weight: bold; }
+.buyer { -fx-background-color: #eef1ff; -fx-padding: 8; -fx-background-radius: 8; }
+.seller { -fx-background-color: #e9f7ec; -fx-padding: 8; -fx-background-radius: 8; }
