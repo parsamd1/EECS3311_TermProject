@@ -37,6 +37,8 @@ On Windows, use `mvnw.cmd` instead of `./mvnw`.
 | GUI | `./mvnw javafx:run` |
 | CLI | `./mvnw -q exec:java -Dexec.args="<command>"` |
 
+The GUI has one tab per step, in the order a seller uses them: Vehicle, History, Market, Pricing, Positioning, Forecast, Listing, Export, Offers, Simulator and Sessions. The bottom bar shows the open vehicle, whether every change has been saved, and whether the AI is on. AI-written text carries an **AI** badge; text from a fallback template is labelled as such. GUI and CLI share the same data folder, so a session started in one continues in the other.
+
 CLI examples:
 
 ```sh
@@ -45,7 +47,9 @@ CLI examples:
 ./mvnw -q exec:java -Dexec.args="profile set --make Mazda --model CX-5 --year 2022 --trim GS --body suv --km 49000 --city Toronto --province ON --defect 'scratch:rear door:minor'"
 ./mvnw -q exec:java -Dexec.args="comps search"                 # comparables from the seeded dataset
 ./mvnw -q exec:java -Dexec.args="comps search --source live"   # live search of AutoTrader.ca, Kijiji and CarGurus (needs a key)
+./mvnw -q exec:java -Dexec.args="comps exclude 3"              # leave comparable 3 out of pricing (pin, unpin, include too)
 ./mvnw -q exec:java -Dexec.args="price --strategy max-profit --accept"
+./mvnw -q exec:java -Dexec.args="session backup"               # copy all saved sessions to a dated folder
 ./mvnw -q exec:java -Dexec.args="doctor --live"                # pre-demo check: key, connection and one rehearsal search
 ```
 

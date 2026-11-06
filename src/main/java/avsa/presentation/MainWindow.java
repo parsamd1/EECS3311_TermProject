@@ -76,7 +76,8 @@ public class MainWindow extends Application implements EventListener {
         }, this::showNotes, this::refreshAll);
 
         tabs.addAll(List.of(new VehicleTab(ctx), new HistoryTab(ctx), new MarketTab(ctx), new PricingTab(ctx),
-                new ForecastTab(ctx), new ListingTab(ctx), new ExportTab(ctx), new OffersTab(ctx), new SessionsTab(ctx)));
+                new PositioningTab(ctx), new ForecastTab(ctx), new ListingTab(ctx), new ExportTab(ctx), new OffersTab(ctx),
+                new SimulatorTab(ctx), new SessionsTab(ctx)));
         tabPane = new TabPane();
         for (FeatureTab feature : tabs) {
             ScrollPane scroll = new ScrollPane(feature.content());
