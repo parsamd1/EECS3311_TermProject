@@ -56,16 +56,33 @@ public final class LiveSearchSource implements MarketDataSource {
 
     /**
      * A listing whose page did not show its city was found by a search near the seller, so it is placed in the
-     * searched city and says so in its description.
+     * searched city and says so in its description. A listing read from a search-results page that reports the
+     * searched city may only be repeating the search filter, so its location also counts as approximate.
      */
     private static RawListing toRaw(FoundListing f, MarketQuery query) {
         boolean located = f.city() != null && !f.city().isBlank();
-        String description = text(f.description()) + (located ? "" : " (Location not shown; assumed near "
-                + query.city() + ".)");
+        boolean fromFilter = located && isResultsPage(text(f.url())) && f.city().strip().equalsIgnoreCase(query.city());
+        String note = !located ? " (Location not shown; assumed near " + query.city() + ".)"
+                : fromFilter ? " (Read from a search-results page; location approximate.)" : "";
         return new RawListing(text(f.source()), text(f.url()), "", text(f.make()), text(f.model()), number(f.year()),
                 text(f.trim()), number(f.odometerKm()), number(f.askingPrice()), located ? f.city() : query.city(),
                 located && f.province() != null ? f.province() : query.province(), "", text(f.accidents()),
-                description.strip(), !located);
+                (text(f.description()) + note).strip(), !located || fromFilter);
+    }
+
+    /** A marketplace page listing many vehicles, rather than one vehicle's own page. */
+    public static boolean isResultsPage(String url) {
+        String u = url.toLowerCase(java.util.Locale.ROOT);
+        if (u.contains("kijiji.ca")) {
+            return u.contains("/b-");
+        }
+        if (u.contains("autotrader.ca")) {
+            return u.contains("/cars/");
+        }
+        if (u.contains("cargurus.ca")) {
+            return !u.contains("listing=") && !u.contains("/details/");
+        }
+        return false;
     }
 
     private static String text(String s) {

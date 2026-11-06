@@ -112,6 +112,19 @@ class LiveSearchSourceTest {
     }
 
     @Test
+    void aResultsPageThatOnlyRepeatsTheSearchedCityGivesAnApproximateLocation() {
+        String page = "https://www.autotrader.ca/cars/mazda/cx-5/reg_on/cit_toronto/ot_used";
+        llm.thenRespond(answer("{\"listings\":[" + listing(page, 2022, "CX-5", 28_900) + ","
+                + listing(FOUND, 2023, "CX-5", 31_000) + "]}", page, FOUND));
+        var listings = source.search(QUERY).listings();
+        assertTrue(listings.get(0).locationAssumed());
+        assertTrue(listings.get(0).description().contains("location approximate"));
+        assertFalse(listings.get(1).locationAssumed(), "a listing's own page states where the car is");
+        assertTrue(LiveSearchSource.isResultsPage("https://www.kijiji.ca/b-cars-vehicles/city-of-toronto/mazda-cx5/k0"));
+        assertFalse(LiveSearchSource.isResultsPage("https://www.autotrader.ca/offers/mazda-cx-5-gs-awd-123"));
+    }
+
+    @Test
     void severalListingsFromOneResultsPageAreKeptApart() {
         String page = "https://www.kijiji.ca/b-cars-trucks/toronto/mazda-cx-5";
         llm.thenRespond(answer("{\"listings\":[" + listing(page, 2022, "CX-5", 28_900) + ","
