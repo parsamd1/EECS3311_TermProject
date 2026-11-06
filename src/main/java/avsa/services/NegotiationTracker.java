@@ -13,7 +13,13 @@ import java.util.regex.Pattern;
  */
 public final class NegotiationTracker {
 
-    private static final Pattern DOLLARS = Pattern.compile("\\$\\s?(\\d[\\d,]*)");
+    /** "$24,100", "24,100" or "24100"; not a distance such as "49,000 km". */
+    private static final Pattern AMOUNT = Pattern.compile(
+            "\\$?\\s?(\\d{1,3}(?:,\\d{3})+|\\d{4,7})(?![\\d,])(?!\\s*(?:km|kms|kilomet|mi\\b|miles))",
+            Pattern.CASE_INSENSITIVE);
+    /** "24k" or "24.5k". */
+    private static final Pattern THOUSANDS = Pattern.compile("\\$?\\s?(\\d{1,3}(?:\\.\\d)?)\\s?k\\b",
+            Pattern.CASE_INSENSITIVE);
 
     private final Money askingPrice;
     private final Money floor;
@@ -30,14 +36,22 @@ public final class NegotiationTracker {
             turn.offer().ifPresent(o -> latestOffer = o);
             return;
         }
-        Matcher m = DOLLARS.matcher(turn.message());
+        Matcher m = AMOUNT.matcher(turn.message());
         while (m.find()) {
-            Money named = Money.cad(Long.parseLong(m.group(1).replace(",", "")));
-            // Small amounts, such as a repair cost, are not prices.
-            if (named.toDouble() >= askingPrice.toDouble() * 0.5
-                    && (lowestSellerPrice == null || named.compareTo(lowestSellerPrice) < 0)) {
-                lowestSellerPrice = named;
-            }
+            consider(Money.cad(Long.parseLong(m.group(1).replace(",", ""))));
+        }
+        Matcher k = THOUSANDS.matcher(turn.message());
+        while (k.find()) {
+            consider(Money.cad(Math.round(Double.parseDouble(k.group(1)) * 1000)));
+        }
+    }
+
+    /** Small amounts, such as a repair cost or a year, and amounts far above asking are not prices. */
+    private void consider(Money named) {
+        double value = named.toDouble();
+        if (value >= askingPrice.toDouble() * 0.5 && value <= askingPrice.toDouble() * 1.5
+                && (lowestSellerPrice == null || named.compareTo(lowestSellerPrice) < 0)) {
+            lowestSellerPrice = named;
         }
     }
 
