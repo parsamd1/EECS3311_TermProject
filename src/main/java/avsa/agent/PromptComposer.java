@@ -310,6 +310,33 @@ public final class PromptComposer {
         return new LLMRequest("coaching", COACHING_SYSTEM, user.toString(), 4_000, null);
     }
 
+    private static final String PLAN_SYSTEM = """
+            You plan a guided workflow for an assistant that helps a private seller in Canada sell one used \
+            vehicle. Choose steps only from the catalog. The program adds missing prerequisites, puts the steps in \
+            order and inserts the seller's approval checkpoints, so list only the steps the goal asks for; for \
+            "everything" or "a full sales package", list every step.
+            strategy: "QUICK_SALE" if the seller wants to sell fast or to a dealer, "MAX_PROFIT" if they want the \
+            best price, null if the goal does not say.
+            platforms: the marketplaces the seller named for the ad, from AUTOTRADER, KIJIJI, \
+            FACEBOOK_MARKETPLACE; [] if none was named.
+            liveSearch: true only if the seller asks for live, current or today's listings.
+            If the goal is about selling this vehicle but you cannot tell what the seller wants, put one short \
+            clarifying question in "question" and leave steps empty. If the goal has nothing to do with selling \
+            this vehicle, put one sentence saying so in "outOfScope" and leave steps empty.
+            Reply with only this JSON object: {"steps": ["..."], "strategy": null, "platforms": [], \
+            "liveSearch": false, "question": null, "outOfScope": null}
+            """;
+
+    /** The plan for a guided workflow (F12); the vehicle is described without the VIN. */
+    public LLMRequest planProposal(String goal, String vehicle, StepCatalog catalog) {
+        StringBuilder user = new StringBuilder("Vehicle: ").append(vehicle).append("\nCatalog:");
+        for (avsa.domain.StepType type : catalog.steps()) {
+            user.append("\n- ").append(type.name()).append(": ").append(catalog.describe(type));
+        }
+        user.append("\nSeller's goal: ").append(goal);
+        return new LLMRequest("plan-proposal", PLAN_SYSTEM, user.toString(), 4_000, null);
+    }
+
     /** A one-word request used by the pre-demo check. */
     public LLMRequest connectionCheck() {
         return new LLMRequest("connection-check", "Reply with exactly one word.", "Reply with OK.", 1_000, null);
