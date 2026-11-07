@@ -30,6 +30,7 @@ public final class Session {
     private List<GeneratedListing> listings = new ArrayList<>();
     private PositioningReport positioning;
     private List<SimulationSession> simulations = new ArrayList<>();
+    private Plan plan;
 
     public Session(UUID id, String name, VehicleProfile profile, Instant lastModified) {
         this.id = Objects.requireNonNull(id);
@@ -54,6 +55,10 @@ public final class Session {
     public void setPositioning(PositioningReport report) { this.positioning = report; }
     public List<SimulationSession> simulations() { return List.copyOf(simulations); }
     public void addSimulation(SimulationSession simulation) { simulations.add(simulation); }
+
+    /** The latest guided workflow (F12); a new goal replaces it. */
+    public Optional<Plan> plan() { return Optional.ofNullable(plan); }
+    public void setPlan(Plan newPlan) { this.plan = newPlan; }
 
     public Optional<SimulationSession> latestSimulation() {
         return simulations.isEmpty() ? Optional.empty() : Optional.of(simulations.get(simulations.size() - 1));

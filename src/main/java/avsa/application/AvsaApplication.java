@@ -6,6 +6,9 @@ import avsa.agent.ClaudeClient;
 import avsa.agent.LLMClient;
 import avsa.agent.MemoryManager;
 import avsa.agent.MockLLMClient;
+import avsa.agent.PlanValidator;
+import avsa.agent.Planner;
+import avsa.agent.StepCatalog;
 import avsa.agent.PromptComposer;
 import avsa.agent.ResponseParser;
 import avsa.agent.ToolManager;
@@ -88,8 +91,10 @@ public final class AvsaApplication {
         SessionService sessions = new SessionService(
                 new JsonSessionRepository(dataDir.resolve("sessions"), new JsonMapper(), new SchemaMigrator()), clock);
         EventBus events = new EventBus();
+        StepCatalog catalog = new StepCatalog();
         events.subscribe(AgentEvent.class, new AutoSaveListener(sessions));
         return new AgentController(sessions, tools, events, trace, validator, ai, liveConfigured,
-                new BuyerSimulator(ai, new MemoryManager(), clock), clock);
+                new BuyerSimulator(ai, new MemoryManager(), clock),
+                new Planner(ai, new PlanValidator(catalog), catalog), clock);
     }
 }

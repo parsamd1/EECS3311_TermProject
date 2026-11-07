@@ -4,6 +4,18 @@ import avsa.agent.AgentTrace;
 import avsa.agent.AiResult;
 import avsa.agent.AiTaskRunner;
 import avsa.agent.ToolArgs;
+import avsa.agent.Planner;
+import avsa.domain.CheckpointDecision;
+import avsa.domain.Plan;
+import avsa.domain.PlanStep;
+import avsa.domain.SalesPackage;
+import avsa.domain.StepStatus;
+import avsa.domain.StepType;
+import avsa.domain.ValidationReport;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
 import avsa.agent.ToolManager;
 import avsa.agent.ToolResult;
 import avsa.agent.tasks.ConnectionCheckTask;
@@ -71,14 +83,17 @@ public final class AgentController {
     private final AiTaskRunner ai;
     private final boolean liveSearchConfigured;
     private final BuyerSimulator simulator;
+    private final Planner planner;
+    private final PlanExecutor executor;
     private final Clock clock;
+    private final Set<String> planNotes = new LinkedHashSet<>();
     private List<String> lastNotes = List.of();
     private PricingInput lastPricingInput;
     private PriceRecommendation lastRecommendation;
 
     public AgentController(SessionService sessions, ToolManager tools, EventBus events, AgentTrace trace,
                            ListingValidator validator, AiTaskRunner ai, boolean liveSearchConfigured,
-                           BuyerSimulator simulator, Clock clock) {
+                           BuyerSimulator simulator, Planner planner, Clock clock) {
         this.sessions = sessions;
         this.tools = tools;
         this.events = events;
@@ -87,7 +102,9 @@ public final class AgentController {
         this.ai = ai;
         this.liveSearchConfigured = liveSearchConfigured;
         this.simulator = simulator;
+        this.planner = planner;
         this.clock = clock;
+        this.executor = new PlanExecutor(new PlanSteps(), events, clock);
     }
 
     public SessionService sessions() {
@@ -328,6 +345,175 @@ public final class AgentController {
         session.addOffer(evaluation);
         events.publish(new SessionUpdated(clock.instant(), session.id(), "offers"));
         return evaluation;
+    }
+
+    /** Plans the seller's goal and runs it until the first checkpoint, a failure, or the end (F12). */
+    public Plan runGoal(String goal) {
+        return runGoal(goal, false);
+    }
+
+    /** @param autoApprove accept each checkpoint's result without asking; off unless the seller turns it on */
+    public Plan runGoal(String goal, boolean autoApprove) {
+        Session session = session();
+        Plan plan = planner.propose(goal, session.activeProfile(), autoApprove);
+        planNotes.clear();
+        planNotes.addAll(planner.lastNotes());
+        session.setPlan(plan);
+        executor.execute(plan, session.id());
+        return finishPlanAction(plan);
+    }
+
+    public Plan answerCheckpoint(CheckpointDecision decision) {
+        PlanExecutor run = executorFor(session());
+        planNotes.clear();
+        run.approve(decision);
+        return finishPlanAction(run.current());
+    }
+
+    public Plan resumeRun() {
+        PlanExecutor run = executorFor(session());
+        planNotes.clear();
+        run.resume();
+        return finishPlanAction(run.current());
+    }
+
+    /** Stops the plan; while a step is running (another thread) it stops after that step. */
+    public Plan cancelRun() {
+        PlanExecutor run = executorFor(session());
+        run.cancel();
+        return run.current();
+    }
+
+    public Optional<Plan> currentPlan() {
+        return sessions.hasCurrent() ? sessions.current().plan() : Optional.empty();
+    }
+
+    private PlanExecutor executorFor(Session session) {
+        Plan saved = session.plan().orElseThrow(() -> new IllegalStateException("No guided plan yet. Start one with "
+                + "a goal."));
+        if (executor.plan().filter(p -> p == saved).isEmpty()) {
+            executor.restore(saved, session.id());
+        }
+        return executor;
+    }
+
+    private Plan finishPlanAction(Plan plan) {
+        if (!executor.notice().isBlank()) {
+            planNotes.add(executor.notice());
+        }
+        lastNotes = List.copyOf(planNotes);
+        return plan;
+    }
+
+    /** Runs plan steps through the same feature methods the seller uses by hand, so results and events match. */
+    private final class PlanSteps implements StepRunner {
+
+        @Override
+        public String run(Plan plan, PlanStep step) {
+            String summary = switch (step.type()) {
+                case FIND_COMPARABLES -> {
+                    MarketSourceType source = plan.liveSearch() && liveSearchConfigured ? MarketSourceType.LIVE
+                            : MarketSourceType.SEEDED;
+                    MarketSnapshot s = findComparables(SearchRequest.defaults(), source, null);
+                    yield s.stats().count() + " comparables from " + s.sourceName()
+                            + (s.fromCache() ? " (saved result)" : "") + ", median " + cad(s.stats().median()) + ".";
+                }
+                case RECOMMEND_PRICE -> {
+                    PriceRecommendation r = recommendPrice(plan.strategy(), PricingParameters.defaults(), null);
+                    yield label(plan.strategy()) + ": asking " + cad(r.askingPrice()) + ", retail "
+                            + cad(r.retail().low()) + " - " + cad(r.retail().high()) + ", wholesale "
+                            + cad(r.wholesale().low()) + " - " + cad(r.wholesale().high()) + ", walk away below "
+                            + cad(r.walkAwayFloor()) + " (" + label(r.confidence()) + " confidence).";
+                }
+                case FORECAST -> {
+                    DepreciationForecast f = forecast(Money.ZERO);
+                    yield f.breakEvenMonth().map(m -> "From month " + m + ", waiting nets less than a dealer pays "
+                            + "today.").orElse("Within 12 months, waiting still nets more than a dealer pays today.");
+                }
+                case ANALYZE_POSITIONING -> {
+                    PositioningReport r = analyzePositioning();
+                    yield r.claims().size() + " evidence-checked points" + (r.removedClaimCount() > 0 ? ", "
+                            + r.removedClaimCount() + " unsupported AI claim(s) removed" : "") + ".";
+                }
+                case GENERATE_LISTING -> {
+                    GeneratedListing l = generateListing(ListingOptions.defaults());
+                    yield "\"" + l.title() + "\" written by " + (l.templateFallback() ? "the template (AI "
+                            + "unavailable)" : "the AI") + "; validation " + (l.report().map(ValidationReport::isValid)
+                            .orElse(false) ? "passed." : "failed: " + l.report().map(r -> r.violations().get(0)
+                            .message()).orElse("not run") + " Approving accepts the warnings.");
+                }
+                case EXPORT_LISTING -> {
+                    List<String> parts = new ArrayList<>();
+                    for (Platform p : plan.platforms()) {
+                        ExportedListing e = exportListing(p, null);
+                        parts.add(p.displayName() + (e.withinLimits() ? " ready" : " over its limits"));
+                    }
+                    yield String.join(", ", parts) + ".";
+                }
+            };
+            planNotes.addAll(lastNotes);
+            return summary;
+        }
+
+        @Override
+        public void approved(Plan plan, PlanStep step) {
+            switch (step.type()) {
+                case RECOMMEND_PRICE -> {
+                    if (lastRecommendation == null) {
+                        throw new IllegalStateException("Run pricing again before approving it.");
+                    }
+                    acceptPrice(lastRecommendation);
+                }
+                case GENERATE_LISTING -> {
+                    if (!latestListing(session()).isExportable()) {
+                        overrideListingValidation();
+                    }
+                }
+                default -> {
+                    // Other steps have nothing to apply.
+                }
+            }
+        }
+
+        @Override
+        public SalesPackage finish(Plan plan) {
+            Session session = session();
+            boolean listed = done(plan, StepType.GENERATE_LISTING);
+            List<ExportedListing> exports = new ArrayList<>();
+            if (done(plan, StepType.EXPORT_LISTING)) {
+                plan.platforms().forEach(p -> exports.add(exportListing(p, null)));
+            }
+            PriceRecommendation price = session.activePrice().orElse(null);
+            StringBuilder summary = new StringBuilder("Done.");
+            if (price != null) {
+                summary.append(" Asking ").append(cad(price.askingPrice())).append(" (").append(label(price.strategy()))
+                        .append("), walk away below ").append(cad(price.walkAwayFloor())).append('.');
+            }
+            if (listed) {
+                summary.append(" The listing is validated");
+                summary.append(exports.isEmpty() ? "." : " and formatted for " + String.join(", ", exports.stream()
+                        .map(e -> e.profile().platform().displayName()).toList()) + ".");
+            }
+            SalesPackage result = new SalesPackage(summary.toString(), price,
+                    done(plan, StepType.FORECAST) ? session.forecast().orElse(null) : null,
+                    done(plan, StepType.ANALYZE_POSITIONING) ? session.positioning().orElse(null) : null,
+                    listed ? session.latestListing().orElse(null) : null, exports);
+            events.publish(new SessionUpdated(clock.instant(), session.id(), "salesPackage"));
+            return result;
+        }
+
+        private static boolean done(Plan plan, StepType type) {
+            return plan.step(type).map(s -> s.status() == StepStatus.DONE).orElse(false);
+        }
+    }
+
+    private static String cad(Money m) {
+        long dollars = Math.round(m.toDouble());
+        return (dollars < 0 ? "-$" : "$") + String.format(Locale.ROOT, "%,d", Math.abs(dollars));
+    }
+
+    private static String label(Enum<?> value) {
+        return value.name().toLowerCase(Locale.ROOT).replace('_', ' ');
     }
 
     /** Whether live search can run: it needs an API key. */
