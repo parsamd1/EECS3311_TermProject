@@ -29,6 +29,7 @@ public final class Plan {
     private StepType awaiting;
     private String message = "";
     private SalesPackage salesPackage;
+    private PriceRecommendation proposedPrice;
 
     public Plan(UUID id, String goal, int maxSteps, boolean autoApprove, boolean templatePlan, StrategyType strategy,
                 boolean liveSearch, List<Platform> platforms, List<PlanStep> steps, List<String> notes) {
@@ -57,6 +58,10 @@ public final class Plan {
     public PlanStatus status() { return status; }
     public String message() { return message; }
     public Optional<SalesPackage> salesPackage() { return Optional.ofNullable(salesPackage); }
+
+    /** The price the pricing step computed, accepted only when the seller approves it. */
+    public Optional<PriceRecommendation> proposedPrice() { return Optional.ofNullable(proposedPrice); }
+    public void setProposedPrice(PriceRecommendation rec) { this.proposedPrice = rec; }
 
     public Optional<PlanStep> nextPendingStep() {
         return steps.stream().filter(s -> s.status() == StepStatus.PENDING).findFirst();

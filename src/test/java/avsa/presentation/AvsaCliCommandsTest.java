@@ -178,4 +178,25 @@ class AvsaCliCommandsTest {
         assertEquals(AvsaCli.EXIT_OK, run(null, "session", "backup", "--to", dir.resolve("bk").toString()));
         assertTrue(output().contains("Backed up to"));
     }
+
+    @Test
+    void aGuidedPlanRunsAcrossCommandsWithApprovals() {
+        run(null, PROFILE);
+        llm.thenRespond("{\"steps\": [\"GENERATE_LISTING\", \"EXPORT_LISTING\"], \"strategy\": \"QUICK_SALE\", "
+                + "\"platforms\": [\"KIJIJI\"], \"liveSearch\": false}");
+        assertEquals(AvsaCli.EXIT_OK, run("test-key", "run", "Price my car for a quick sale and write a Kijiji ad"));
+        assertTrue(output().contains("step: find comparables - done"));
+        assertTrue(output().contains("Status: awaiting approval"));
+        assertTrue(output().contains("Next: avsa run approve"));
+
+        assertEquals(AvsaCli.EXIT_OK, run("test-key", "run", "approve"));
+        assertTrue(output().contains("Waiting for your approval: generate listing"));
+        assertEquals(AvsaCli.EXIT_OK, run("test-key", "run", "approve"));
+        assertTrue(output().contains("Status: completed"));
+        assertTrue(output().contains("---- Kijiji ----"));
+
+        assertEquals(AvsaCli.EXIT_OK, run("test-key", "run", "resume"));
+        assertTrue(output().contains("Note: The plan is already complete."));
+        assertEquals(AvsaCli.EXIT_USAGE, run("test-key", "run"));
+    }
 }

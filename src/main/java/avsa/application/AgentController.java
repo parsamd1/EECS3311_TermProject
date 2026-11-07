@@ -420,6 +420,7 @@ public final class AgentController {
                 }
                 case RECOMMEND_PRICE -> {
                     PriceRecommendation r = recommendPrice(plan.strategy(), PricingParameters.defaults(), null);
+                    plan.setProposedPrice(r);
                     yield label(plan.strategy()) + ": asking " + cad(r.askingPrice()) + ", retail "
                             + cad(r.retail().low()) + " - " + cad(r.retail().high()) + ", wholesale "
                             + cad(r.wholesale().low()) + " - " + cad(r.wholesale().high()) + ", walk away below "
@@ -458,12 +459,8 @@ public final class AgentController {
         @Override
         public void approved(Plan plan, PlanStep step) {
             switch (step.type()) {
-                case RECOMMEND_PRICE -> {
-                    if (lastRecommendation == null) {
-                        throw new IllegalStateException("Run pricing again before approving it.");
-                    }
-                    acceptPrice(lastRecommendation);
-                }
+                case RECOMMEND_PRICE -> acceptPrice(plan.proposedPrice().orElseThrow(() ->
+                        new IllegalStateException("The plan has no price to approve; resume it to price again.")));
                 case GENERATE_LISTING -> {
                     if (!latestListing(session()).isExportable()) {
                         overrideListingValidation();

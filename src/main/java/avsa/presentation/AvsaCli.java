@@ -5,6 +5,8 @@ import avsa.application.AgentEvent;
 import avsa.application.AvsaApplication;
 import avsa.application.EventListener;
 import avsa.application.SessionService;
+import avsa.application.CheckpointReached;
+import avsa.application.StepProgress;
 import avsa.domain.AccidentRecord;
 import avsa.domain.BodyStyle;
 import avsa.domain.ChatTurn;
@@ -12,6 +14,9 @@ import avsa.domain.CoachingReport;
 import avsa.domain.Claim;
 import avsa.domain.ClaimKind;
 import avsa.domain.BuyerType;
+import avsa.domain.CheckpointDecision;
+import avsa.domain.Plan;
+import avsa.domain.PlanStep;
 import avsa.domain.ComparableListing;
 import avsa.domain.ConditionReport;
 import avsa.domain.Defect;
@@ -87,9 +92,9 @@ public final class AvsaCli implements EventListener {
     static final int EXIT_USAGE = 2;
 
     private static final Set<String> FLAGS = Set.of("json", "accept", "live", "help", "version", "no-features",
-            "no-maintenance", "confirm");
+            "no-maintenance", "confirm", "auto-approve");
     private static final Set<String> COMMANDS = Set.of("profile", "session", "comps", "price", "doctor", "listing",
-            "export", "offer", "forecast", "history", "position", "simulate");
+            "export", "offer", "forecast", "history", "position", "simulate", "run");
 
     private final PrintStream out;
     private final PrintStream err;
@@ -163,6 +168,7 @@ public final class AvsaCli implements EventListener {
                 case "history" -> history(controller, options);
                 case "position" -> position(controller);
                 case "simulate" -> simulate(controller, options);
+                case "run" -> run(controller, options);
                 default -> {
                     err.println("Unknown command: " + command);
                     err.println("Run 'avsa --help' to see the available commands.");
@@ -183,10 +189,66 @@ public final class AvsaCli implements EventListener {
         }
     }
 
-    /** Events confirm that each change was saved. */
+    /** Events confirm that each change was saved; guided-workflow steps are shown as they run. */
     @Override
     public void onEvent(AgentEvent event) {
-        out.println("(saved: " + event.getClass().getSimpleName() + ")");
+        if (event instanceof StepProgress p) {
+            out.println("  step: " + label(p.step().type()) + " - " + label(p.step().status()));
+        } else if (!(event instanceof CheckpointReached)) {
+            out.println("(saved: " + event.getClass().getSimpleName() + ")");
+        }
+    }
+
+    private int run(AgentController controller, CliOptions o) {
+        String action = o.word(1);
+        Plan plan = switch (action) {
+            case "approve" -> controller.answerCheckpoint(CheckpointDecision.APPROVE);
+            case "reject" -> controller.answerCheckpoint(CheckpointDecision.REJECT);
+            case "change-strategy" -> controller.answerCheckpoint(CheckpointDecision.CHANGE_STRATEGY);
+            case "resume" -> controller.resumeRun();
+            case "cancel" -> controller.cancelRun();
+            case "show" -> controller.currentPlan().orElseThrow(() ->
+                    new IllegalStateException("No guided plan yet. Run 'avsa run \"<goal>\"'."));
+            case "" -> throw new IllegalArgumentException("Give a goal in quotes, for example: avsa run \"Price my car "
+                    + "for a quick sale and write a Kijiji ad\"");
+            default -> {
+                out.println("Planning: " + action);
+                yield controller.runGoal(action, o.flag("auto-approve"));
+            }
+        };
+        printPlan(plan);
+        printNotes(controller);
+        return EXIT_OK;
+    }
+
+    private void printPlan(Plan plan) {
+        out.println("Plan for \"" + plan.goal() + "\"" + (plan.templatePlan() ? "  (template plan: AI unavailable)"
+                : "  (planned by the AI, checked by the program)"));
+        out.println("Strategy: " + label(plan.strategy()) + (plan.platforms().isEmpty() ? "" : "   Marketplaces: "
+                + String.join(", ", plan.platforms().stream().map(Platform::displayName).toList()))
+                + (plan.liveSearch() ? "   Live search" : "") + (plan.autoApprove() ? "   Auto-approve on" : ""));
+        int n = 1;
+        for (PlanStep step : plan.steps()) {
+            out.println(String.format(Locale.ROOT, "  %d. %-9s %-20s%s%s", n++, "[" + label(step.status()) + "]",
+                    label(step.type()), step.checkpoint() ? " (checkpoint) " : " ", step.resultSummary()));
+        }
+        plan.notes().forEach(note -> out.println("Note: " + note));
+        out.println("Status: " + label(plan.status()) + (plan.message().isBlank() ? "" : ". " + plan.message()));
+        switch (plan.status()) {
+            case AWAITING_APPROVAL -> out.println("Next: avsa run approve | change-strategy | reject | cancel");
+            case PAUSED -> out.println("Next: avsa run resume | cancel");
+            case COMPLETED -> plan.salesPackage().ifPresent(p -> {
+                p.exports().forEach(e -> out.println("---- " + e.profile().platform().displayName() + " ----\n"
+                        + e.text() + "\n----"));
+                out.println("See also: avsa price, avsa forecast, avsa position, avsa listing show");
+            });
+            default -> {
+            }
+        }
+    }
+
+    private static String label(Enum<?> value) {
+        return value.name().toLowerCase(Locale.ROOT).replace('_', ' ');
     }
 
     private int profile(AgentController controller, CliOptions o) {
@@ -752,6 +814,8 @@ public final class AvsaCli implements EventListener {
         out.println("  position                 How the vehicle compares with the comparables, with evidence");
         out.println("  simulate start [--persona serious|low-baller|dealer|suspicious]   Practise with an AI buyer");
         out.println("  simulate say \"message\" | end | show");
+        out.println("  run \"goal\" [--auto-approve]   Let the assistant plan and run the steps, pausing for approval");
+        out.println("  run approve | change-strategy | reject | resume | cancel | show");
         out.println();
         out.println("Options:");
         out.println("  --json       Also print the agent trace as JSON");
