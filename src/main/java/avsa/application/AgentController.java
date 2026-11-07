@@ -447,7 +447,8 @@ public final class AgentController {
                     List<String> parts = new ArrayList<>();
                     for (Platform p : plan.platforms()) {
                         ExportedListing e = exportListing(p, null);
-                        parts.add(p.displayName() + (e.withinLimits() ? " ready" : " over its limits"));
+                        parts.add(p.displayName() + (e.withinLimits() ? " ready" : ": " + e.warnings().stream()
+                                .filter(w -> w.contains("characters")).findFirst().orElse("over its limits")));
                     }
                     yield String.join(", ", parts) + ".";
                 }
@@ -490,6 +491,12 @@ public final class AgentController {
                 summary.append(" The listing is validated");
                 summary.append(exports.isEmpty() ? "." : " and formatted for " + String.join(", ", exports.stream()
                         .map(e -> e.profile().platform().displayName()).toList()) + ".");
+                List<String> tooLong = exports.stream().filter(e -> !e.withinLimits())
+                        .map(e -> e.profile().platform().displayName()).toList();
+                if (!tooLong.isEmpty()) {
+                    summary.append(" Too long for ").append(String.join(", ", tooLong))
+                            .append(": use Make shorter in the Listing tab, then export again.");
+                }
             }
             SalesPackage result = new SalesPackage(summary.toString(), price,
                     done(plan, StepType.FORECAST) ? session.forecast().orElse(null) : null,

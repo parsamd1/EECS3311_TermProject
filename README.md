@@ -37,7 +37,7 @@ On Windows, use `mvnw.cmd` instead of `./mvnw`.
 | GUI | `./mvnw javafx:run` |
 | CLI | `./mvnw -q exec:java -Dexec.args="<command>"` |
 
-The GUI has one tab per step, in the order a seller uses them: Vehicle, History, Market, Pricing, Positioning, Forecast, Listing, Export, Offers, Simulator and Sessions. The bottom bar shows the open vehicle, whether every change has been saved, and whether the AI is on. AI-written text carries an **AI** badge; text from a fallback template is labelled as such. GUI and CLI share the same data folder, so a session started in one continues in the other.
+The GUI has one tab per step, in the order a seller uses them: Vehicle, History, Market, Pricing, Positioning, Forecast, Listing, Export, Offers, Simulator and Sessions. The Assistant panel on the right takes a goal in plain words ("Price my car for a quick sale and write a Kijiji ad"): the AI plans the steps, the program checks the plan and runs it, and it stops for your approval at the price and the listing. The bottom bar shows the open vehicle, whether every change has been saved, and whether the AI is on. AI-written text carries an **AI** badge; text from a fallback template is labelled as such. GUI and CLI share the same data folder, so a session started in one continues in the other.
 
 CLI examples:
 
@@ -50,6 +50,8 @@ CLI examples:
 ./mvnw -q exec:java -Dexec.args="comps exclude 3"              # leave comparable 3 out of pricing (pin, unpin, include too)
 ./mvnw -q exec:java -Dexec.args="price --strategy max-profit --accept"
 ./mvnw -q exec:java -Dexec.args="session backup"               # copy all saved sessions to a dated folder
+./mvnw -q exec:java -Dexec.args="run 'Price my car for a quick sale and write a Kijiji ad'"   # guided workflow
+./mvnw -q exec:java -Dexec.args="run approve"                  # answer its checkpoint (or change-strategy, reject, resume, cancel)
 ./mvnw -q exec:java -Dexec.args="doctor --live"                # pre-demo check: key, connection and one rehearsal search
 ```
 

@@ -24,7 +24,8 @@ final class GuiContext {
 
     /** Shows and hides the progress overlay. */
     interface BusyView {
-        void busy(String message);
+        /** @param stop what the overlay's Stop button does; null for actions that cannot be stopped */
+        void busy(String message, Runnable stop);
 
         void idle();
     }
@@ -86,7 +87,12 @@ final class GuiContext {
      * every tab is refreshed.
      */
     <T> void run(String message, Callable<T> work, Consumer<T> onSuccess) {
-        busyView.busy(message);
+        run(message, work, onSuccess, null);
+    }
+
+    /** Like {@link #run(String, Callable, Consumer)}, with a Stop button that calls {@code stop} on this thread. */
+    <T> void run(String message, Callable<T> work, Consumer<T> onSuccess, Runnable stop) {
+        busyView.busy(message, stop);
         worker.submit(() -> {
             try {
                 T value = work.call();

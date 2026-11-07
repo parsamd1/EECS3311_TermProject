@@ -4,6 +4,7 @@ import avsa.application.AgentController;
 import avsa.application.AgentEvent;
 import avsa.application.AvsaApplication;
 import avsa.application.EventListener;
+import avsa.application.StepProgress;
 import avsa.domain.Session;
 import avsa.infrastructure.AppConfig;
 import java.io.IOException;
@@ -18,7 +19,9 @@ import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ScrollPane;
@@ -51,6 +54,9 @@ public class MainWindow extends Application implements EventListener {
     private final Label busyElapsed = Ui.muted("");
     private final StackPane overlay = new StackPane();
     private TabPane tabPane;
+    private Node assistant;
+    private final Button stopButton = new Button("Stop");
+    private Runnable stopAction;
     private Timeline elapsedTimer;
 
     @Override
@@ -65,8 +71,8 @@ public class MainWindow extends Application implements EventListener {
         ctx = new GuiContext(controller, config, stage, getHostServices());
         ctx.bind(new GuiContext.BusyView() {
             @Override
-            public void busy(String message) {
-                showBusy(message);
+            public void busy(String message, Runnable stop) {
+                showBusy(message, stop);
             }
 
             @Override
@@ -87,7 +93,14 @@ public class MainWindow extends Application implements EventListener {
             tabPane.getTabs().add(tab);
         }
 
+        AssistantPanel assistantPanel = new AssistantPanel(ctx);
+        tabs.add(assistantPanel);
+        ScrollPane assistantScroll = new ScrollPane(assistantPanel.content());
+        assistantScroll.setFitToWidth(true);
+        assistantScroll.setPrefWidth(360);
+        assistant = assistantScroll;
         BorderPane main = new BorderPane(tabPane);
+        main.setRight(assistantScroll);
         notes.setMaxWidth(Double.MAX_VALUE);
         HBox notesBar = Ui.styled(new HBox(notes), "notes-bar");
         notesBar.visibleProperty().bind(notes.textProperty().isNotEmpty());
@@ -100,7 +113,14 @@ public class MainWindow extends Application implements EventListener {
 
         ProgressIndicator spinner = new ProgressIndicator();
         spinner.setPrefSize(48, 48);
-        VBox busyBox = Ui.styled(new VBox(12, spinner, busyMessage, busyElapsed), "busy-box");
+        stopButton.setOnAction(e -> {
+            if (stopAction != null) {
+                stopAction.run();
+                stopButton.setDisable(true);
+                busyElapsed.setText("Stopping after the current step...");
+            }
+        });
+        VBox busyBox = Ui.styled(new VBox(12, spinner, busyMessage, busyElapsed, stopButton), "busy-box");
         busyBox.setAlignment(Pos.CENTER);
         busyBox.setMaxSize(460, Region.USE_PREF_SIZE);
         busyMessage.setMaxWidth(420);
@@ -109,7 +129,7 @@ public class MainWindow extends Application implements EventListener {
         overlay.setVisible(false);
 
         StackPane root = new StackPane(main, overlay);
-        Scene scene = new Scene(root, 1200, 800);
+        Scene scene = new Scene(root, 1500, 860);
         scene.getStylesheets().add(MainWindow.class.getResource("avsa.css").toExternalForm());
         stage.setTitle(TITLE);
         stage.setScene(scene);
@@ -127,6 +147,11 @@ public class MainWindow extends Application implements EventListener {
     /** Called by the event bus, possibly from the worker thread. */
     @Override
     public void onEvent(AgentEvent event) {
+        if (event instanceof StepProgress p) {
+            String text = "Step: " + Ui.label(p.step().type()) + " (" + Ui.label(p.step().status()).toLowerCase()
+                    + ")";
+            Platform.runLater(() -> busyMessage.setText(text));
+        }
         Platform.runLater(() -> saveStatus.setText(ctx.controller().sessions().hasUnsavedChanges()
                 ? "Not saved: the data folder cannot be written; changes are kept until it can"
                 : "All changes saved " + Ui.when(event.occurredAt())));
@@ -154,15 +179,22 @@ public class MainWindow extends Application implements EventListener {
         notes.setText(list.isEmpty() ? "" : "Note: " + String.join("\nNote: ", list));
     }
 
-    private void showBusy(String message) {
+    private void showBusy(String message, Runnable stop) {
         notes.setText("");
         tabPane.setDisable(true);
+        assistant.setDisable(true);
         busyMessage.setText(message);
+        stopAction = stop;
+        stopButton.setVisible(stop != null);
+        stopButton.setManaged(stop != null);
+        stopButton.setDisable(false);
         Instant started = Instant.now();
         busyElapsed.setText("");
         elapsedTimer = new Timeline(new KeyFrame(javafx.util.Duration.seconds(1), e -> {
             long s = Duration.between(started, Instant.now()).toSeconds();
-            busyElapsed.setText(s + " s");
+            if (!stopButton.isDisabled()) {
+                busyElapsed.setText(s + " s");
+            }
             overlay.setVisible(true);
         }));
         elapsedTimer.setCycleCount(Timeline.INDEFINITE);
@@ -175,6 +207,8 @@ public class MainWindow extends Application implements EventListener {
         }
         overlay.setVisible(false);
         tabPane.setDisable(false);
+        assistant.setDisable(false);
+        stopAction = null;
     }
 
     public static void main(String[] args) {
