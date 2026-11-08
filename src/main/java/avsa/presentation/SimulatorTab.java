@@ -135,7 +135,7 @@ final class SimulatorTab extends FeatureTab {
         rows.add(Ui.source(r.aiWritten(), "Basic check (AI unavailable)"));
         rows.add(Ui.text("Disclosure: " + r.disclosureFeedback()));
         rows.add(Ui.text("Your floor: " + r.floorFeedback()));
-        r.redFlags().forEach(f -> rows.add(Ui.warning("Warning sign: " + f)));
+        r.redFlags().forEach(f -> rows.add(Ui.styled(Ui.text("Warning sign: " + f), "warning")));
         s.listingGaps().forEach(g -> rows.add(Ui.muted("The listing did not answer: " + g)));
         return Ui.card("Coaching", rows.toArray(Node[]::new));
     }

@@ -81,6 +81,10 @@ final class PricingTab extends FeatureTab {
             params = PricingParameters.defaults().withNegotiationMargin(Ui.decimal(margin.getText(), "Negotiation margin"))
                     .withDealerSpread(Ui.decimal(spread.getText(), "Dealer spread"));
             manual = Ui.parseMoney(baseline.getText(), "Your own estimate");
+            // Checked here so the message reads as an input problem, not as a step that cannot run.
+            params.validate().stream().findFirst().ifPresent(error -> {
+                throw new IllegalArgumentException(error.message());
+            });
         } catch (IllegalArgumentException e) {
             ctx.problem(e);
             return;

@@ -185,16 +185,10 @@ final class MarketTab extends FeatureTab {
             summary.getChildren().add(Ui.warning("The search could not run, so this is the saved result from "
                     + Ui.when(s.retrievedAt()) + "."));
         }
-        if (s.lowConfidence()) {
-            summary.getChildren().add(Ui.warning("Low confidence: few comparables. Try a wider radius, another search, "
-                    + "or a CSV import."));
-        }
         summary.getChildren().add(Ui.styled(Ui.text(String.format(Locale.ROOT,
                 "%d listings used:  lowest %s   median %s   highest %s", s.stats().count(), Ui.cad(s.stats().min()),
                 Ui.cad(s.stats().median()), Ui.cad(s.stats().max()))), "card-title"));
-        if (s.skippedRecords() > 0) {
-            summary.getChildren().add(Ui.muted(s.skippedRecords() + " malformed records were skipped."));
-        }
+        // The snapshot's warnings already say how many records were skipped and why.
         s.warnings().forEach(w -> summary.getChildren().add(Ui.warning(w)));
         Set<String> links = new LinkedHashSet<>();
         s.rankedListings().stream().map(ComparableListing::url).filter(u -> !u.isBlank()).forEach(links::add);

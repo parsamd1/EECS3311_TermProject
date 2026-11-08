@@ -358,7 +358,9 @@ public final class AvsaCli implements EventListener {
                 default -> controller.pinComparable(id, action.equals("pin"));
             };
             printSnapshot(s);
-            out.println("Run 'avsa price' again: the active price no longer matches the comparables.");
+            if (controller.sessions().current().activePrice().isPresent()) {
+                out.println("Run 'avsa price' again: the active price no longer matches the comparables.");
+            }
             return EXIT_OK;
         }
         if (!action.equals("search")) {
