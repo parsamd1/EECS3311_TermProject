@@ -273,6 +273,17 @@ class SessionPersistenceTest {
     }
 
     @Test
+    void anUnknownSessionIdIsAnInputError() {
+        service.create(cx5());
+        UUID unknown = UUID.randomUUID();
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> service.open(unknown));
+        assertEquals("No saved session has the id " + unknown + ".", e.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> service.rename(unknown, "x"));
+        assertThrows(IllegalArgumentException.class, () -> service.duplicate(unknown));
+        assertThrows(IllegalArgumentException.class, () -> service.delete(unknown));
+    }
+
+    @Test
     void featuresWithoutASessionAreDirectedToCreateAProfile() {
         assertThrows(IllegalStateException.class, service::current);
     }

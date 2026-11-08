@@ -63,12 +63,15 @@ public final class SessionService {
         return repository.list();
     }
 
+    /** @throws IllegalArgumentException no saved session has this id */
     public Session open(UUID id) {
+        requireSaved(id);
         current = repository.load(id);
         return current;
     }
 
     public void rename(UUID id, String newName) {
+        requireSaved(id);
         Session session = repository.load(id);
         session.rename(newName);
         session.touch(clock.instant());
@@ -79,6 +82,7 @@ public final class SessionService {
     }
 
     public Session duplicate(UUID id) {
+        requireSaved(id);
         Session source = repository.load(id);
         Session copy = source.copyAs(UUID.randomUUID(), source.name() + " (copy)", clock.instant());
         repository.save(copy);
@@ -87,9 +91,17 @@ public final class SessionService {
 
     /** The caller asks the seller to confirm first (F10). */
     public void delete(UUID id) {
+        requireSaved(id);
         repository.delete(id);
         if (current != null && current.id().equals(id)) {
             current = null;
+        }
+    }
+
+    /** A mistyped id is the user's error, not an unreadable file. */
+    private void requireSaved(UUID id) {
+        if (repository.list().stream().noneMatch(s -> s.id().equals(id))) {
+            throw new IllegalArgumentException("No saved session has the id " + id + ".");
         }
     }
 
