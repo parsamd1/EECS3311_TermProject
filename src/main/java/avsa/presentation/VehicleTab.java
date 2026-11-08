@@ -204,6 +204,9 @@ final class VehicleTab extends FeatureTab {
         }
         List<ValidationError> warnings = problems.stream().filter(p -> !p.blocking()).toList();
         ctx.run("Saving the profile...", () -> controller().saveProfile(profile), p -> {
+            // The form already shows this profile; without this, the refresh after saving refills the
+            // form and clears the messages below.
+            shown = p;
             messages.getChildren().add(Ui.ok("Profile saved."));
             warnings.forEach(w -> messages.getChildren().add(Ui.warning(w.message())));
         });
