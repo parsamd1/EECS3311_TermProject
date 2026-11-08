@@ -1,0 +1,97 @@
+@startuml sd02-comparables
+!include seq-style.iuml
+title SD02 Find comparable listings (F02, UC02): Command, Proxy, live search, AI review (as implemented)
+
+actor Seller
+boundary ":MarketTab" as GUI
+participant ":GuiContext" as GC
+control ":AgentController" as AC
+participant ":ToolManager" as TM
+participant ":MarketSearchTool" as MST
+participant ":MarketSources" as MS
+participant ":ComparableFinder" as CF
+participant ":CachingMarketDataSource" as PX
+participant "real:LiveSearchSource\n(or CsvImportSource /\nSeededDatasetSource)" as REAL
+participant ":ListingCache" as CACHE
+participant ":SimilarityScorer" as SC
+participant ":AiTaskRunner" as AIR
+entity ":Session" as S
+participant ":EventBus" as EB
+actor "Claude API + web search\n<<AI service>>" as EXT
+
+== Search ==
+Seller -> GUI : source (seeded, CSV or live), radius, max results;\nFind comparables
+GUI -> GC ++ : run("Searching...", work, onSuccess)
+note right of GC : runs on the GUI's worker thread\nbehind a progress overlay
+GC -> AC ++ : findComparables(request, source, csvFile)
+AC -> S ++ : activeProfile()
+S --> AC -- : profile
+AC -> TM ++ : execute("market_search", args)
+TM -> MST ++ : execute(args)
+MST -> MS ++ : forChoice(source, csvFile)
+MS -> PX ** : create(real, seeded, cache)
+MS --> MST -- : proxy
+MST -> CF ** : create(proxy, normalizer, gazetteer, ...)
+MST -> CF ++ : find(profile, request)
+note right of CF : Gazetteer.resolve() gives the origin; the source\nis asked once for the widest year range
+CF -> PX ++ : search(query)
+PX -> REAL ++ : isAvailable()
+REAL --> PX -- : available
+alt available
+  PX -> REAL ++ : search(query)
+  opt live search
+    REAL -> AIR ++ : run(ListingSearchTask(query))
+    AIR -> EXT : web search + fetch on AutoTrader.ca,\nKijiji, CarGurus
+    EXT --> AIR : listings (JSON) + fetched page URLs
+    ref over AIR : SD00 Standard AI task execution
+    AIR --> REAL -- : AiResult<ListingSearchResult>, sources
+    REAL -> REAL : keep only listings whose page was fetched;\nmark results-page cities "approximate"
+  end
+  REAL --> PX -- : MarketSearchResult (skipped = unverified\nor malformed records)
+  PX -> CACHE : put(query, result)
+else unavailable or the search failed
+  PX -> CACHE ++ : latest(query)
+  CACHE --> PX -- : result (fromCache = true, retrievedAt)\nor none: seeded dataset
+end
+PX --> CF -- : MarketSearchResult
+loop until at least 3 comparables or nothing left to widen
+  CF -> CF : normalize (ListingNormalizer), remove outliers,\nkeep matches for this radius / years / trim
+  loop each listing
+    CF -> SC ++ : score(profile, history, listing)
+    SC --> CF -- : ScoreBreakdown
+  end
+  note right of CF : widening narrows the fetched set\nagain; no second search
+end
+CF --> MST -- : snapshot (ranked, unreviewed, warnings)
+MST -> AIR ++ : run(CompReviewTask(listings, trim))
+ref over AIR : SD00 Standard AI task execution
+AIR --> MST -- : AiResult<CompReview>
+alt usedFallback is false
+  MST -> CF ++ : applyReview(snapshot, flags)
+  loop each flagged listing
+    CF -> SC : applyFlags(listing, flags)
+  end
+  CF --> MST -- : snapshot (re-ranked)
+else LLM unavailable
+  MST -> MST : note "listings are unreviewed"
+end
+MST --> TM -- : ToolResult(snapshot, notes)
+TM -> TM : AgentTrace.recordToolCall(...)
+TM --> AC -- : ToolResult
+AC -> S : addSnapshot(snapshot)
+AC -> EB : publish(MarketDataReady)
+AC --> GC -- : snapshot
+GC --> GUI -- : onSuccess(snapshot); refresh all tabs
+GUI --> Seller : ranked table, score breakdown, flags, source links,\ncache date or low-confidence / skipped-records warnings
+
+== Exclude or pin a listing ==
+Seller -> GUI : select a listing; Exclude / Pin
+GUI -> GC ++ : run(message, work, onSuccess)\n(work: excludeComparable or pinComparable)
+GC -> AC ++ : excludeComparable(listingId, excluded)
+AC -> AC : re-sort: pinned, then not excluded, then score;\nsnapshot.withListings(ranked)
+AC -> S : replaceLatestSnapshot(snapshot)
+note right of S : marks the active price stale
+AC -> EB : publish(SessionUpdated("comparables"))
+AC --> GC -- : snapshot
+GC --> GUI -- : refresh: excluded listings leave pricing\nand positioning; "Calculate the price again"
+@enduml

@@ -1,0 +1,22 @@
+@startuml plan-run-states
+title Figure 4.1 PlanExecutor run states (F12, as implemented)
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam dpi 130
+[*] --> Running : execute(plan)
+Running --> Running : advance() / step done
+Running --> AwaitingApproval : advance() / price or listing step done,\nnot auto-approve
+AwaitingApproval --> Running : approve(APPROVE)
+AwaitingApproval --> Running : approve(CHANGE_STRATEGY) / re-run affected steps
+AwaitingApproval --> Paused : approve(REJECT)
+Running --> Paused : step failed after retries
+Paused --> Running : resume() / retry the failed step
+Paused --> AwaitingApproval : resume() / ask the rejected\ncheckpoint again
+Running --> Completed : advance() / last step done
+Running --> Cancelled : cancel()
+AwaitingApproval --> Cancelled : cancel()
+Paused --> Cancelled : cancel()
+Completed --> [*]
+Cancelled --> [*]
+Cancelled : completed results kept,\nno partial exports
+@enduml

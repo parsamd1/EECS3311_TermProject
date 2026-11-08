@@ -1,0 +1,28 @@
+' Shared look for all AVSA class diagrams.
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam titleFontSize 16
+skinparam nodesep 30
+skinparam ranksep 40
+skinparam class {
+  BackgroundColor White
+  BorderColor #333333
+  ArrowColor #333333
+}
+skinparam class<<ref>> {
+  BackgroundColor #EEEEEE
+  BorderColor #999999
+  FontColor #555555
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #B8A14A
+}
+hide empty members
+hide <<ref>> members
+hide <<ref>> stereotype
+set separator none
+skinparam dpi 130

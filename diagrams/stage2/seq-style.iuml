@@ -1,0 +1,25 @@
+' Shared look for all AVSA sequence diagrams.
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 12
+skinparam titleFontSize 15
+skinparam dpi 130
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 230
+skinparam sequence {
+  LifeLineBorderColor #888888
+  ParticipantBackgroundColor White
+  ParticipantBorderColor #333333
+  ActorBackgroundColor White
+  ActorBorderColor #333333
+  GroupBorderColor #555555
+  GroupBackgroundColor #F2F2F2
+  ReferenceBackgroundColor #EAF1FB
+  ReferenceBorderColor #4A6FA5
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #B8A14A
+}
+hide footbox
+autonumber "<b>0."

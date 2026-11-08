@@ -1,0 +1,231 @@
+@startuml class-6-services-tools
+!include style.iuml
+left to right direction
+title 3.7 Deterministic services and agent tools (as implemented)
+
+package "avsa.agent (see 3.6)" {
+  interface Tool <<ref>>
+  class AiTaskRunner <<ref>>
+  class MemoryManager <<ref>>
+}
+
+package "avsa.tools (concrete commands)" {
+  abstract class AiAssistedTool {
+    # ai : AiTaskRunner
+  }
+  class MarketSearchTool
+  class HistoryImportTool
+  class PricingTool
+  class ForecastTool
+  class PositioningTool
+  class ListingTool
+  class ExportTool
+  class OfferEvaluationTool
+}
+
+package "avsa.services" {
+
+  class ComparableFinder {
+    + find(profile : VehicleProfile, request : SearchRequest) : MarketSnapshot
+    + applyReview(snapshot : MarketSnapshot, flags : Map<String, List<ListingFlag>>) : MarketSnapshot
+  }
+
+  class SearchRequest {
+    - radiusKm : int
+    - maxResults : int
+    - yearWindow : int
+    - requireTrim : boolean
+    - history : VehicleHistory [0..1]
+  }
+
+  class OutlierFilter {
+    + removeOutliers(listings : List<ComparableListing>) : List<ComparableListing>
+  }
+
+  class SimilarityScorer {
+    - weights : ScoringWeights
+    - flagPenalties : Map<FlagCode, Double>
+    + score(profile : VehicleProfile, history : VehicleHistory, listing : ComparableListing) : ScoreBreakdown
+    + applyFlags(listing : ComparableListing, flags : List<ListingFlag>) : void
+  }
+
+  class PricingEngine {
+    + recommend(input : PricingInput, strategy : PricingStrategy) : PriceRecommendation
+    ~ {static} weightedMedian(values : List<Money>, weights : List<Double>) : Money
+    ~ {static} odometerAdjusted(c : ComparableListing, profile : VehicleProfile, perKm : double) : Money
+    ~ {static} conditionAdjustments(profile : VehicleProfile, baseline : Money) : List<PriceAdjustment>
+    ~ {static} historyAdjustments(history : VehicleHistory, baseline : Money) : List<PriceAdjustment>
+    ~ {static} aiAdjustments(proposed : List<PriceAdjustment>, baseline : Money, params : PricingParameters, warnings : List<String>) : List<PriceAdjustment>
+    ~ {static} checkSanity(rec : PriceRecommendation) : void
+  }
+
+  interface PricingStrategy <<Strategy>> {
+    + type() : StrategyType
+    + askingPrice(wholesale : PriceRange, retail : PriceRange, negotiationMargin : double) : Money
+    + walkAwayFloor(wholesale : PriceRange, retail : PriceRange) : Money
+  }
+  class MaxProfitStrategy
+  class QuickSaleStrategy
+
+  class DepreciationCalculator {
+    + forecast(input : ForecastInput) : DepreciationForecast
+    + {static} monthlyRate(annualRate : double) : double
+  }
+
+  class DepreciationRateTable {
+    + {static} loadOrDefault(file : Path) : DepreciationRateTable
+    + bandFor(segment : Segment, ageYears : int) : RateBand
+    + covers(segment : Segment, ageYears : int) : boolean
+  }
+
+  class PositioningAnalyzer {
+    + metrics(profile : VehicleProfile, asking : Money, comps : List<ComparableListing>) : List<PercentileMetric>
+  }
+
+  class ClaimValidator {
+    + filter(report : PositioningReport, comps : List<ComparableListing>, profile : VehicleProfile) : PositioningReport
+  }
+
+  class ListingValidator {
+    - bannedPhrases : List<String>
+    - minLength : int
+    - maxLength : int
+    + validate(listing : GeneratedListing, facts : VehicleFacts) : ValidationReport
+  }
+
+  class TemplateListingWriter {
+    + write(facts : VehicleFacts, options : ListingOptions) : GeneratedListing
+  }
+
+  class OfferEvaluator {
+    + evaluate(offer : Offer, rec : PriceRecommendation, forecast : DepreciationForecast) : OfferEvaluation
+    ~ {static} classify(amount : Money, wholesale : PriceRange) : OfferVerdict
+    ~ {static} counter(verdict : OfferVerdict, amount : Money, wholesale : PriceRange) : Money
+  }
+
+  class BuyerSimulator {
+    + start(persona : Persona, listing : GeneratedListing, facts : VehicleFacts, floor : Money) : SimulationSession
+    + reply(session : SimulationSession, facts : VehicleFacts, sellerText : String) : ChatTurn
+    + end(session : SimulationSession, facts : VehicleFacts) : CoachingReport
+    ~ {static} openingOffer(session : SimulationSession) : Money
+    ~ {static} maxOffer(session : SimulationSession) : Money
+  }
+
+  class NegotiationTracker {
+    - askingPrice : Money
+    - floor : Money
+    + record(turn : ChatTurn) : void
+    + latestOffer() : Optional<Money>
+    + lowestSellerPrice() : Optional<Money>
+    + isBelowFloor(amount : Money) : boolean
+    + floorFeedback() : String
+  }
+
+  class ExporterFactory {
+    + createExporter(platform : Platform) : ListingExporter
+  }
+
+  abstract class ListingExporter <<Template Method>> {
+    # profile : PlatformProfile
+    + export(listing : GeneratedListing) : ExportedListing
+    # checkPrerequisites(listing : GeneratedListing) : void
+    # {abstract} mapFields(listing : GeneratedListing) : Map<String, String>
+    # applyLimits(fields : Map<String, String>) : Map<String, String>
+    # {abstract} render(fields : Map<String, String>) : String
+    # verifyDisclosure(listing : GeneratedListing, fields : Map<String, String>, text : String) : void
+    + {static} bodyLength(fields : Map<String, String>) : int
+  }
+  class AutoTraderExporter
+  class KijijiExporter
+  class FacebookMarketplaceExporter
+}
+
+package "avsa.infrastructure (see 3.8)" {
+  interface MarketDataSource <<ref>>
+  class MarketSources <<ref>>
+  class ListingNormalizer <<ref>>
+  class Gazetteer <<ref>>
+  class HistoryImportService <<ref>>
+  class PlatformProfileLoader <<ref>>
+}
+
+Tool <|.. AiAssistedTool
+AiAssistedTool --> "1" AiTaskRunner
+AiAssistedTool <|-- MarketSearchTool
+Tool <|.. HistoryImportTool
+AiAssistedTool <|-- PricingTool
+Tool <|.. ForecastTool
+AiAssistedTool <|-- PositioningTool
+AiAssistedTool <|-- ListingTool
+Tool <|.. ExportTool
+AiAssistedTool <|-- OfferEvaluationTool
+
+MarketSearchTool --> MarketSources : source for the\nseller's choice
+MarketSearchTool ..> ComparableFinder : creates per search
+ComparableFinder ..> SearchRequest
+ComparableFinder --> ListingNormalizer
+HistoryImportTool --> HistoryImportService
+PricingTool --> PricingEngine
+ForecastTool --> DepreciationCalculator
+PositioningTool --> PositioningAnalyzer
+ListingTool --> ListingValidator
+ListingTool --> TemplateListingWriter
+ExportTool --> ExporterFactory
+OfferEvaluationTool --> OfferEvaluator
+
+ComparableFinder --> "1" MarketDataSource
+ComparableFinder --> Gazetteer
+ComparableFinder --> OutlierFilter
+ComparableFinder --> SimilarityScorer
+
+PricingEngine ..> PricingStrategy : uses
+PricingStrategy <|.. MaxProfitStrategy
+PricingStrategy <|.. QuickSaleStrategy
+
+DepreciationCalculator --> "1" DepreciationRateTable
+BuyerSimulator *-- "1" NegotiationTracker
+BuyerSimulator --> AiTaskRunner
+BuyerSimulator --> MemoryManager
+PositioningTool --> ClaimValidator
+
+ExporterFactory ..> ListingExporter : creates
+ExporterFactory --> PlatformProfileLoader
+ListingExporter <|-- AutoTraderExporter
+ListingExporter <|-- KijijiExporter
+ListingExporter <|-- FacebookMarketplaceExporter
+
+note bottom of MaxProfitStrategy
+  asking = top of retail range plus the
+  negotiation margin
+  floor = top of wholesale range
+end note
+
+note bottom of QuickSaleStrategy
+  asking = top of wholesale range
+  floor = bottom of wholesale range
+end note
+
+note right of ListingExporter
+  export() is final and runs a fixed sequence:
+  checkPrerequisites -> mapFields ->
+  applyLimits -> render -> verifyDisclosure.
+  applyLimits trims SEO keywords, then
+  features, then maintenance; never the
+  disclosure or the price (F08).
+end note
+
+note top of MarketSearchTool
+  Each tool is a ConcreteCommand: it turns
+  ToolArgs into one call on its receiver
+  service and wraps the result in ToolResult.
+end note
+
+note bottom of OfferEvaluator
+  LOW_BALL: below wholesale range
+  BELOW_AVERAGE: lower half
+  FAIR: upper half
+  STRONG: above range (F11)
+  A counter-offer is never below the
+  walk-away floor.
+end note
+@enduml

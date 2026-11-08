@@ -1,0 +1,111 @@
+@startuml sd08-workflow
+!include seq-style.iuml
+title SD08 Run guided sales workflow (F12, UC12): planning, State, Observer (as implemented)
+
+actor Seller
+boundary ":AssistantPanel" as GUI
+participant ":GuiContext" as GC
+control ":AgentController" as AC
+participant ":Planner" as PL
+participant ":AiTaskRunner" as AIR
+participant ":PlanValidator" as PV
+participant ":StepCatalog" as SC
+participant ":PlanExecutor" as PE
+participant "state:PlanRunState" as ST
+participant "runner:StepRunner\n(AgentController.PlanSteps)" as SR
+participant ":EventBus" as EB
+
+== Planning ==
+Seller -> GUI : "Price my car for a quick sale and write a Kijiji ad"
+GUI -> GC ++ : run("The assistant is planning...", work, onSuccess, stop)
+note right of GC : work runs on the GUI's worker thread;\nthe window shows progress and a Stop button
+GC -> AC ++ : runGoal(goal, autoApprove)
+AC -> PL ++ : propose(goal, profile, autoApprove)
+PL -> AIR ++ : run(PlanProposalTask(goal, vehicle, catalog))
+ref over AIR : SD00 (fallback: StepCatalog.templatePlanFor(goal), labelled "template plan")
+AIR --> PL -- : AiResult<PlanProposal>
+alt clarifying question or goal out of scope
+  PL --> AC : IllegalArgumentException(question or capabilities)
+  AC --> GC : error
+  GC --> Seller : "The assistant needs one detail: ..." / what it can do
+else steps proposed
+  PL -> PV ++ : validate(plan)
+  PV -> SC ++ : lookup(name), prerequisitesOf(type), isCheckpoint(type)
+  SC --> PV -- : answers
+  PV -> PV : add prerequisites, drop an export with no platform,\norder steps, set checkpoints, cap the count, add notes
+  PV --> PL -- : validated plan
+  PL --> AC -- : plan
+end
+AC -> PE ++ : execute(plan, sessionId)
+PE -> ST ** : RunningState
+
+== Execution (until a checkpoint, a failure or the end) ==
+loop while state is RunningState
+  PE -> ST ++ : advance(ctx)
+  ST -> PE : runNextStep()
+  PE -> EB : publish(StepProgress(step RUNNING))
+  PE -> SR ++ : run(plan, step)
+  note right of SR : calls the facade's own feature method:\nfindComparables / recommendPrice / forecast /\nanalyzePositioning / generateListing / exportListing\n(SD02, SD03, SD05, SD06); a failed step is\nretried up to 2 times
+  SR --> PE -- : result summary
+  PE -> EB : publish(StepProgress(step DONE or FAILED))
+  EB -> GUI : onEvent: plan view and progress message update
+  alt step failed after retries
+    ST -> PE : changeState(PausedState)
+  else step is a checkpoint (price or listing) and not auto-approve
+    ST -> PE : awaitApproval(step)
+    PE -> EB : publish(CheckpointReached(step))
+  else no pending steps left
+    ST -> PE : complete()
+    PE -> SR ++ : finish(plan)
+    SR --> PE -- : SalesPackage
+    PE -> EB : publish(SessionUpdated("salesPackage"))
+  end
+  deactivate ST
+end
+PE --> AC -- : (returns: waiting, paused or completed)
+AC --> GC -- : plan
+GC --> GUI -- : onSuccess(plan)
+GUI --> Seller : checkpoint dialog with the real result\n(price: Approve / Change strategy / Reject / Decide later)
+
+== Checkpoint answer ==
+Seller -> GUI : Approve / Change strategy / Reject
+GUI -> GC ++ : run(message, work, onSuccess, stop)\n(work: answerCheckpoint(decision))
+GC -> AC ++ : answerCheckpoint(decision)
+AC -> PE ++ : approve(decision)
+PE -> ST ++ : approve(ctx, decision)
+note right of ST : state is AwaitingApprovalState
+alt APPROVE
+  ST -> PE : applyApproval(step)
+  PE -> SR : approved(plan, step)
+  note right of SR : price: acceptPrice(plan.proposedPrice);\nlisting with warnings: overrideListingValidation()
+  ST -> PE : changeState(RunningState)
+else CHANGE_STRATEGY
+  ST -> ST : plan.switchStrategy(); plan.rerunFrom(RECOMMEND_PRICE)
+  ST -> PE : changeState(RunningState)
+else REJECT
+  ST -> PE : changeState(PausedState)
+end
+deactivate ST
+note over PE, EB : in RunningState the execution loop above continues
+PE --> AC --
+AC --> GC --
+GC --> GUI --
+
+== Cancel (Stop button, or "avsa run cancel") ==
+Seller -> GUI : Stop
+GUI -> AC ++ : cancelRun()
+AC -> PE ++ : cancel()
+alt a step is running
+  PE -> PE : cancelRequested = true;\nstops after the current step
+else
+  PE -> ST ++ : cancel(ctx)
+  ST -> PE : stop()
+  PE -> PE : plan.skipRemaining();\nchangeState(CancelledState)
+  deactivate ST
+end
+note right of PE : completed results are kept;\nno partial exports
+PE --> AC --
+deactivate AC
+
+note across : CLI: each "avsa run approve | change-strategy | reject | resume | cancel" is a new process;\nAgentController restores the saved plan with PlanExecutor.restore(plan, sessionId) and PlanRunState.of(status).
+@enduml

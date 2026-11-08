@@ -1,0 +1,60 @@
+@startuml sd04-history
+!include seq-style.iuml
+title SD04 Import vehicle history (F04, UC04): Adapter
+
+actor Seller
+boundary ":MainWindow" as GUI
+control ":AgentController" as AC
+participant ":ToolManager" as TM
+participant ":HistoryImportTool" as HIT
+participant ":HistoryImportService" as HIS
+participant ":CarfaxPdfAdapter" as CPA
+participant ":PdfTextExtractor" as PTE
+participant ":HistoryConsistencyChecker" as HCC
+entity ":Session" as S
+entity "rec:PriceRecommendation" as REC
+participant ":EventBus" as EB
+
+Seller -> GUI : upload CARFAX report (PDF)
+GUI -> AC ++ : importHistory(input)
+AC -> TM ++ : execute("history_import", args)
+TM -> HIT ++ : execute(args)
+HIT -> HIS ++ : importFrom(input, profile)
+loop each registered HistoryImporter until one matches
+  HIS -> CPA ++ : supports(input)
+  CPA --> HIS -- : true
+end
+HIS -> CPA ++ : importHistory(input)
+CPA -> PTE ++ : extractText(file)
+PTE --> CPA -- : text
+alt no extractable text or unknown format
+  CPA --> HIS : UnsupportedInput
+  HIS --> HIT : result: manual entry required
+else text found
+  CPA -> CPA : parse known sections;\nunreadable fields = UNKNOWN
+  CPA --> HIS : history
+  HIS -> HCC ++ : check(history, profile)
+  HCC --> HIS -- : ConsistencyReport
+  HIS --> HIT : HistoryImportResult(history, report)
+end
+deactivate CPA
+deactivate HIS
+HIT --> TM -- : ToolResult
+TM --> AC -- : ToolResult
+AC --> GUI -- : HistoryImportResult
+GUI --> Seller : review table ("please confirm" fields),\nwarnings, trust badges
+
+Seller -> GUI : edit values, Confirm
+opt report.hasBlockingWarning() (VIN mismatch)
+  GUI -> Seller : confirm it is the same vehicle
+end
+GUI -> AC ++ : confirmHistory(history)
+AC -> S ++ : setHistory(history)
+opt an active price exists
+  S -> REC : markStale()
+end
+S --> AC --
+AC -> EB : publish(HistoryUpdated)
+AC --> GUI -- : ok
+GUI --> Seller : history saved; price marked stale
+@enduml
