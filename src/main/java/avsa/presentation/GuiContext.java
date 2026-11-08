@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import javafx.application.HostServices;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
 import javafx.stage.Stage;
 
 /**
@@ -113,6 +114,14 @@ final class GuiContext {
                 });
             }
         });
+    }
+
+    /** A Yes/No question; anything but Yes counts as No. */
+    boolean confirm(String question) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, question, ButtonType.YES, ButtonType.NO);
+        alert.initOwner(stage);
+        alert.setHeaderText(null);
+        return alert.showAndWait().orElse(ButtonType.NO) == ButtonType.YES;
     }
 
     /** Explains a rejected action: wrong input, a missing earlier step, or an unexpected fault. */

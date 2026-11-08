@@ -46,8 +46,12 @@ public final class OfferEvaluator {
         if (forecast != null) {
             netIfWaiting = forecast.netIfSoldAfter(expectedMonthsToSell(offer.receivedAt()));
         }
+        Money counter = counter(verdict, amount, wholesale);
+        if (counter != null && counter.compareTo(rec.walkAwayFloor()) < 0) {
+            counter = rec.walkAwayFloor(); // never counter below the seller's own walk-away floor
+        }
         return new OfferEvaluation(offer, verdict, wholesale.positionOf(amount), wholesale.high().minus(amount),
-                counter(verdict, amount, wholesale), netIfWaiting,
+                counter, netIfWaiting,
                 amount.compareTo(rec.walkAwayFloor()) < 0, aboveRetail, warnings);
     }
 

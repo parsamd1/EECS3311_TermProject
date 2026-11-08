@@ -77,10 +77,24 @@ class OfferEvaluatorTest {
 
     @Test
     void fairOfferIsCounteredHalfwayToTheTop() {
-        OfferEvaluation fair = evaluate(24_600);
+        PriceRecommendation quickSale = new PriceRecommendation(StrategyType.QUICK_SALE, Money.cad(30_000),
+                new PriceRange(Money.cad(28_000), Money.cad(29_000)),
+                new PriceRange(Money.cad(24_100), Money.cad(24_900)),
+                Money.cad(24_900), Money.cad(24_100), Confidence.MEDIUM, List.of(), List.of(), List.of(),
+                PricingParameters.defaults(), Instant.parse("2026-10-29T12:00:00Z"));
+        Offer offer = new Offer(Money.cad(24_600), BuyerType.DEALER, "", Instant.parse("2026-10-29T13:00:00Z"));
+        OfferEvaluation fair = evaluator.evaluate(offer, quickSale, null);
         assertEquals(Money.cad(24_800), fair.counterAmount().orElseThrow(), "(24,600 + 24,900) / 2, rounded");
         assertEquals(0.625, fair.positionInWholesale(), 1e-9);
         assertEquals(Money.cad(300), fair.gapToWholesaleTop());
+    }
+
+    @Test
+    void neverCountersBelowTheWalkAwayFloor() {
+        // Maximum profit: the floor is the top of wholesale ($24,900), above the halfway point ($24,800).
+        OfferEvaluation fair = evaluate(24_600);
+        assertEquals(Money.cad(24_900), fair.counterAmount().orElseThrow());
+        assertTrue(fair.belowWalkAwayFloor());
     }
 
     @Test

@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -78,6 +79,13 @@ final class OffersTab extends FeatureTab {
             offer = new Offer(value, buyer.getValue(), notes.getText().strip(), Instant.now());
         } catch (IllegalArgumentException e) {
             ctx.problem(e);
+            return;
+        }
+        // An offer above the retail range is more likely a typo than a real offer (F11).
+        Optional<Money> retailTop = session().flatMap(s -> s.activePrice()).map(p -> p.retail().high());
+        if (retailTop.isPresent() && offer.amount().compareTo(retailTop.get()) > 0
+                && !ctx.confirm(Ui.cad(offer.amount()) + " is above your retail range (up to " + Ui.cad(retailTop.get())
+                        + "). Is the amount correct?")) {
             return;
         }
         ctx.run("Evaluating the offer and writing a counter-offer script...", () -> controller().evaluateOffer(offer),

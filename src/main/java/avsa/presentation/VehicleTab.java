@@ -19,7 +19,6 @@ import java.util.Optional;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.scene.Node;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
@@ -196,7 +195,7 @@ final class VehicleTab extends FeatureTab {
         boolean sameAsOpen = session().map(s -> s.activeProfile().sameVehicleAs(profile)).orElse(false);
         if (!sameAsOpen) {
             Optional<SessionSummary> saved = controller().sessions().findMatching(profile);
-            if (saved.isPresent() && confirm("A saved session for this vehicle already exists (" + saved.get().name()
+            if (saved.isPresent() && ctx.confirm("A saved session for this vehicle already exists (" + saved.get().name()
                     + "). Open it instead of starting a new one?")) {
                 ctx.run("Opening the saved session...", () -> controller().sessions().open(saved.get().id()), s -> { });
                 return;
@@ -290,12 +289,5 @@ final class VehicleTab extends FeatureTab {
                 ctx.problem(e);
             }
         }
-    }
-
-    private boolean confirm(String question) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, question, ButtonType.YES, ButtonType.NO);
-        alert.initOwner(ctx.stage());
-        alert.setHeaderText(null);
-        return alert.showAndWait().orElse(ButtonType.NO) == ButtonType.YES;
     }
 }
