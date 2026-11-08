@@ -7,6 +7,7 @@ import avsa.domain.OfferEvaluation;
 import avsa.domain.PercentileMetric;
 import avsa.domain.Persona;
 import avsa.domain.PriceRecommendation;
+import avsa.domain.StrategyType;
 import avsa.domain.VehicleFacts;
 import avsa.infrastructure.market.MarketQuery;
 import java.util.List;
@@ -84,7 +85,8 @@ public final class PromptComposer {
     private static final String PRICE_EXPLANATION_SYSTEM = """
             You explain a used-vehicle price to a private seller in Canada, in plain language, in at most five \
             sentences. The numbers were computed by a pricing engine and are final: explain them, never change \
-            them, and do not state any dollar amount that is not in the figures you are given.
+            them, and do not state any dollar amount that is not in the figures you are given. A positive \
+            adjustment raises the value and a negative one lowers it; describe each one as its label states.
 
             You may also propose up to three adjustments for things the engine cannot know, such as included \
             winter tires, a recent major service or aftermarket parts, using only the vehicle facts given. Each is a \
@@ -109,6 +111,11 @@ public final class PromptComposer {
                 .append("\nRetail range: ").append(rec.retail())
                 .append("\nWholesale range: ").append(rec.wholesale())
                 .append("\nAsking price: ").append(rec.askingPrice())
+                .append("\nHow the asking price is set: ").append(rec.strategy() == StrategyType.MAX_PROFIT
+                        ? "the top of the retail range plus the " + Math.round(rec.parameters().negotiationMargin() * 100)
+                        + "% negotiation margin, so it is meant to be above the retail range: buyers negotiate down "
+                        + "into it"
+                        : "the top of the wholesale range, the most a dealer is likely to pay")
                 .append("\nWalk-away floor: ").append(rec.walkAwayFloor())
                 .append("\nConfidence: ").append(rec.confidence().name().toLowerCase());
         rec.adjustments().forEach(a -> user.append("\nAdjustment: ").append(a.label()).append(' ').append(a.amount()));

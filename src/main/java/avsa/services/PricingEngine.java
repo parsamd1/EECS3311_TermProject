@@ -71,8 +71,11 @@ public final class PricingEngine {
             baseline = weightedMedian(adjusted, weights(comps));
             Money odometerEffect = baseline.minus(raw);
             if (odometerEffect.compareTo(Money.ZERO) != 0) {
+                // The label states the direction, so the explanation cannot read it the wrong way round.
+                String direction = odometerEffect.compareTo(Money.ZERO) > 0
+                        ? "Fewer kilometres than the comparables" : "More kilometres than the comparables";
                 adjustments.add(PriceAdjustment.computed(
-                        "Odometer difference vs. comparables ($" + params.odometerAdjustmentPerKm() + "/km)",
+                        direction + " ($" + params.odometerAdjustmentPerKm() + "/km)",
                         odometerEffect, AdjustmentKind.ODOMETER));
             }
             halfWidth = comps.size() >= MIN_COMPARABLES ? rangeHalfWidth(adjusted, warnings) : FEW_COMPARABLES_HALF_WIDTH;

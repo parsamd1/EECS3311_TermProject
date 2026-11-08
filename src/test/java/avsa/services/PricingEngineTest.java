@@ -107,6 +107,14 @@ class PricingEngineTest {
         assertEquals(Money.cad(26_400), rec.baseline());
         assertEquals(AdjustmentKind.ODOMETER, rec.adjustments().get(0).kind());
         assertEquals(Money.cad(1_400), rec.adjustments().get(0).amount());
+        assertTrue(rec.adjustments().get(0).label().startsWith("Fewer kilometres than the comparables"),
+                "the label states the direction, so the AI explanation cannot reverse it");
+
+        List<ComparableListing> newer = List.of(comp("a", 25_000, 60_000), comp("b", 25_000, 60_000),
+                comp("c", 25_000, 60_000));
+        PriceAdjustment more = price(car().build(), newer, StrategyType.MAX_PROFIT).adjustments().get(0);
+        assertTrue(more.label().startsWith("More kilometres than the comparables"));
+        assertTrue(more.amount().compareTo(Money.ZERO) < 0);
     }
 
     @Test
