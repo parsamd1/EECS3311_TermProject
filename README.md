@@ -57,6 +57,10 @@ CLI examples:
 
 Live search takes one to three minutes and costs a few cents per search. If it fails, the app shows the last successful live result with its date, or else the seeded dataset, and says which. Sessions and saved live results are kept in `~/.avsa` (set `AVSA_DATA_DIR` to change it), outside the project, because a session can contain the vehicle's VIN. Add `--json` to any command to print the agent trace.
 
+## Stage 2: Implementation
+
+The implementation report is **[stage2-report.pdf](stage2-report.pdf)** (source: [Stage2_Report.md](Stage2_Report.md)): implementation status, the feature-to-class mapping, the nine design patterns with updated UML diagrams, every change from Stage 1, the AI tools log, the commit summary and verification, and the **demonstration video index** (Section 7, one GUI video per feature plus CLI videos).
+
 ## Stage 1: Software and Agent Design
 
 The full design report is **[Stage1_Report.md](Stage1_Report.md)**:
@@ -83,5 +87,7 @@ The full design report is **[Stage1_Report.md](Stage1_Report.md)**:
 | `data/listings.csv` | Seeded dataset: real CX-5 listings collected from AutoTrader.ca and Kijiji |
 | `data/listings-template.csv` | Column headers for importing your own listings |
 | `Stage1_Report.md` | Stage 1 design report |
-| `diagrams/` | PlantUML sources for all UML diagrams |
-| `diagrams/out/` | Rendered diagrams (PNG, used in the report, and SVG) |
+| `stage2-report.pdf`, `Stage2_Report.md` | Stage 2 implementation report (PDF and its Markdown source) |
+| `diagrams/` | PlantUML sources for the Stage 1 diagrams |
+| `diagrams/out/` | Rendered Stage 1 diagrams (PNG, used in the report, and SVG) |
+| `diagrams/stage2/` | Diagrams updated to the implementation (sources, and renders in `out/`) |
