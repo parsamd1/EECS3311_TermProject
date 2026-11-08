@@ -19,6 +19,7 @@ public final class MockLLMClient implements LLMClient {
     private final Queue<Object> scripted = new ArrayDeque<>();
     private final List<LLMRequest> received = new ArrayList<>();
     private FailureMode failureMode = FailureMode.NONE;
+    private String failureReason = "Scripted failure";
 
     public MockLLMClient thenRespond(String text) {
         scripted.add(LLMResponse.ofText(text));
@@ -41,6 +42,12 @@ public final class MockLLMClient implements LLMClient {
         return this;
     }
 
+    /** As {@link #alwaysFail(FailureMode)}, with the reason the user sees in the fallback notes. */
+    public MockLLMClient alwaysFail(FailureMode mode, String reason) {
+        this.failureReason = reason;
+        return alwaysFail(mode);
+    }
+
     public List<LLMRequest> received() {
         return List.copyOf(received);
     }
@@ -50,7 +57,7 @@ public final class MockLLMClient implements LLMClient {
         received.add(request);
         Object next = failureMode == FailureMode.UNAVAILABLE ? FailureMode.UNAVAILABLE : scripted.poll();
         if (next == null || next == FailureMode.UNAVAILABLE) {
-            throw new LLMUnavailableException("Scripted failure", null);
+            throw new LLMUnavailableException(failureReason, null);
         }
         return (LLMResponse) next;
     }

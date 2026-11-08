@@ -46,7 +46,10 @@ public final class AiTaskRunner {
                 response = client.complete(request);
             } catch (LLMUnavailableException e) {
                 trace.recordError(task.name(), e.getMessage());
-                notes.add("Attempt " + attempt + ": " + e.getMessage());
+                String note = "The AI is unavailable: " + e.getMessage();
+                if (!notes.contains(note)) { // the same reason on every attempt is reported once
+                    notes.add(note);
+                }
                 continue;
             }
             trace.recordResponse(task.name(), response);

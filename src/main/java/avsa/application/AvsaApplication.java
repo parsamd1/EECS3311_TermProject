@@ -66,7 +66,8 @@ public final class AvsaApplication {
     public static AgentController create(AppConfig config, Path dataDir, Clock clock, LLMClient llm) {
         AgentTrace trace = new AgentTrace(clock);
         LLMClient client = llm != null ? llm : config.llmApiKey().isPresent() ? new ClaudeClient(config)
-                : new MockLLMClient().alwaysFail(MockLLMClient.FailureMode.UNAVAILABLE);
+                : new MockLLMClient().alwaysFail(MockLLMClient.FailureMode.UNAVAILABLE,
+                        "No API key is set (copy .env.example to .env and add one).");
         AiTaskRunner ai = new AiTaskRunner(new PromptComposer(), client, new ResponseParser(new JsonMapper()), trace);
         boolean liveConfigured = llm != null || config.llmApiKey().isPresent();
         LiveSearchSource live = liveConfigured ? new LiveSearchSource(ai, clock) : new LiveSearchSource();

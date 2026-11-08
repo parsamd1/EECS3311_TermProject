@@ -135,4 +135,12 @@ class AiTaskRunnerTest {
         assertFalse(parser.parse(LLMResponse.ofText(" "), String.class).parsed());
         assertFalse(parser.parse(LLMResponse.ofText("{\"count\": \"many\"}"), Count.class).parsed());
     }
+
+    @Test
+    void theSameUnavailableReasonIsNotedOnce() {
+        llm.alwaysFail(MockLLMClient.FailureMode.UNAVAILABLE, "No API key is set.");
+        AiResult<Count> result = runner.run(new CountTask());
+        assertTrue(result.usedFallback());
+        assertEquals(1, result.notes().stream().filter(n -> n.contains("No API key is set.")).count());
+    }
 }
