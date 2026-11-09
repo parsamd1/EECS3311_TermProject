@@ -29,6 +29,9 @@ class LiveSearchSourceTest {
     private static final MarketQuery QUERY = new MarketQuery("Mazda", "CX-5", 2020, 2024, "Toronto", "ON");
     private static final String FOUND = "https://www.kijiji.ca/v-cars-trucks/toronto/2022-mazda-cx-5-gs/111";
     private static final String MADE_UP = "https://www.kijiji.ca/v-cars-trucks/toronto/2022-mazda-cx-5-gs/999";
+    private static final String F1 = "https://www.kijiji.ca/v-cars-trucks/toronto/2021-mazda-cx-5-gs/201";
+    private static final String F2 = "https://www.kijiji.ca/v-cars-trucks/toronto/2022-mazda-cx-5-gs/202";
+    private static final String F3 = "https://www.kijiji.ca/v-cars-trucks/toronto/2023-mazda-cx-5-gs/203";
 
     private final MockLLMClient llm = new MockLLMClient();
     private final LiveSearchSource source = new LiveSearchSource(
@@ -41,6 +44,12 @@ class LiveSearchSourceTest {
                 + ",\"city\":\"Toronto\",\"province\":\"ON\",\"accidents\":null,\"description\":\"One owner\"}";
     }
 
+    /** Three more complete listings from fetched pages, so an answer has the three usable listings it needs. */
+    private static String fillers() {
+        return listing(F1, 2021, "CX-5", 26_000) + "," + listing(F2, 2022, "CX-5", 27_500) + ","
+                + listing(F3, 2023, "CX-5", 30_000);
+    }
+
     private static LLMResponse answer(String json, String... sources) {
         return new LLMResponse("I searched Kijiji. " + json, Set.of(sources), 1000, 300, 2, "end_turn");
     }
@@ -48,12 +57,12 @@ class LiveSearchSourceTest {
     @Test
     void keepsOnlyListingsWhosePageCameFromTheSearch() {
         llm.thenRespond(answer("{\"listings\":[" + listing(FOUND + "?ad=1", 2022, "CX-5", 28_900) + ","
-                + listing(MADE_UP, 2022, "CX-5", 27_000) + "]}", FOUND));
+                + listing(MADE_UP, 2022, "CX-5", 27_000) + "," + fillers() + "]}", FOUND, F1, F2, F3));
 
         MarketSearchResult result = source.search(QUERY);
 
         assertEquals("Live search", result.sourceName());
-        assertEquals(1, result.listings().size());
+        assertEquals(4, result.listings().size());
         assertEquals("28900", result.listings().get(0).askingPrice());
         assertEquals("51000", result.listings().get(0).odometerKm());
         assertEquals("", result.listings().get(0).accidents(), "null becomes empty, which reads as unknown");
@@ -65,9 +74,10 @@ class LiveSearchSourceTest {
         String other = "https://www.autotrader.ca/a/mazda/cx-30/1";
         String old = "https://www.autotrader.ca/a/mazda/cx-5/2";
         llm.thenRespond(answer("{\"listings\":[" + listing(FOUND, 2022, "CX-5", null) + ","
-                + listing(other, 2022, "CX-30", 25_000) + "," + listing(old, 2015, "CX-5", 12_000) + "]}", FOUND, other, old));
+                + listing(other, 2022, "CX-30", 25_000) + "," + listing(old, 2015, "CX-5", 12_000) + "," + fillers()
+                + "]}", FOUND, other, old, F1, F2, F3));
         MarketSearchResult result = source.search(QUERY);
-        assertEquals(1, result.listings().size());
+        assertEquals(4, result.listings().size());
         assertEquals("", result.listings().get(0).askingPrice());
     }
 
@@ -77,18 +87,30 @@ class LiveSearchSourceTest {
                 .thenRespond(answer("{\"listings\":[" + listing(MADE_UP, 2022, "CX-5", 27_000) + "]}", FOUND));
         MarketDataUnavailableException e = assertThrows(MarketDataUnavailableException.class, () -> source.search(QUERY));
         assertTrue(e.getMessage().contains("did not return usable listings"));
-        assertTrue(llm.received().get(1).user().contains("None of the listing URLs appeared"));
+        assertTrue(llm.received().get(1).user().contains("Only 0 of your listings came from a page"));
     }
 
     @Test
-    void anEmptyResultIsAcceptedAsNothingFound() {
-        llm.thenRespond(answer("{\"listings\":[]}"));
-        assertTrue(source.search(QUERY).listings().isEmpty());
+    void fewerThanThreeUsableListingsAreRetriedThenTheSourceIsUnavailable() {
+        // Two good listings, one for another model and one with no price: not enough to price a car.
+        String other = "https://www.autotrader.ca/a/mazda/cx-30/1";
+        String twoUsable = "{\"listings\":[" + listing(F1, 2021, "CX-5", 26_000) + "," + listing(F2, 2022, "CX-5", 27_500)
+                + "," + listing(other, 2022, "CX-30", 25_000) + "," + listing(F3, 2023, "CX-5", null) + "]}";
+        llm.thenRespond(answer(twoUsable, F1, F2, F3, other)).thenRespond(answer(twoUsable, F1, F2, F3, other));
+        assertThrows(MarketDataUnavailableException.class, () -> source.search(QUERY));
+        assertTrue(llm.received().get(1).user().contains("Only 2 of your listings"));
+        assertTrue(llm.received().get(1).webSearchOptions().isPresent(), "the retry searches again");
+    }
+
+    @Test
+    void anEmptyResultIsRetriedThenTheSourceIsUnavailable() {
+        llm.thenRespond(answer("{\"listings\":[]}")).thenRespond(answer("{\"listings\":[]}"));
+        assertThrows(MarketDataUnavailableException.class, () -> source.search(QUERY));
     }
 
     @Test
     void theRequestSearchesCanadianMarketplacesNearTheSeller() {
-        llm.thenRespond(answer("{\"listings\":[]}"));
+        llm.thenRespond(answer("{\"listings\":[" + fillers() + "]}", F1, F2, F3));
         source.search(QUERY);
         LLMRequest request = llm.received().get(0);
         assertTrue(request.user().contains("Mazda CX-5"));
@@ -104,7 +126,7 @@ class LiveSearchSourceTest {
         String noCity = "{\"source\":\"Kijiji\",\"url\":\"" + FOUND + "\",\"year\":2022,\"make\":\"Mazda\","
                 + "\"model\":\"CX-5\",\"trim\":\"GS\",\"odometerKm\":51000,\"askingPrice\":28900,\"city\":null,"
                 + "\"province\":null,\"accidents\":null,\"description\":\"One owner\"}";
-        llm.thenRespond(answer("{\"listings\":[" + noCity + "]}", FOUND));
+        llm.thenRespond(answer("{\"listings\":[" + noCity + "," + fillers() + "]}", FOUND, F1, F2, F3));
         var raw = source.search(QUERY).listings().get(0);
         assertEquals("Toronto", raw.city());
         assertEquals("ON", raw.province());
@@ -115,7 +137,7 @@ class LiveSearchSourceTest {
     void aResultsPageThatOnlyRepeatsTheSearchedCityGivesAnApproximateLocation() {
         String page = "https://www.autotrader.ca/cars/mazda/cx-5/reg_on/cit_toronto/ot_used";
         llm.thenRespond(answer("{\"listings\":[" + listing(page, 2022, "CX-5", 28_900) + ","
-                + listing(FOUND, 2023, "CX-5", 31_000) + "]}", page, FOUND));
+                + listing(FOUND, 2023, "CX-5", 31_000) + "," + fillers() + "]}", page, FOUND, F1, F2, F3));
         var listings = source.search(QUERY).listings();
         assertTrue(listings.get(0).locationAssumed());
         assertTrue(listings.get(0).description().contains("location approximate"));
@@ -128,11 +150,11 @@ class LiveSearchSourceTest {
     void severalListingsFromOneResultsPageAreKeptApart() {
         String page = "https://www.kijiji.ca/b-cars-trucks/toronto/mazda-cx-5";
         llm.thenRespond(answer("{\"listings\":[" + listing(page, 2022, "CX-5", 28_900) + ","
-                + listing(page, 2023, "CX-5", 31_000) + "]}", page));
+                + listing(page, 2023, "CX-5", 31_000) + "," + fillers() + "]}", page, F1, F2, F3));
         var listings = source.search(QUERY).listings();
         var normalizer = new avsa.infrastructure.market.ListingNormalizer(new avsa.infrastructure.market.Gazetteer());
         var toronto = new avsa.domain.Location("Toronto", "ON", 43.65, -79.38);
-        assertEquals(2, listings.size());
+        assertEquals(5, listings.size());
         assertFalse(normalizer.normalize(listings.get(0), toronto).orElseThrow().listingId()
                 .equals(normalizer.normalize(listings.get(1), toronto).orElseThrow().listingId()));
     }

@@ -18,6 +18,9 @@ import java.util.stream.Collectors;
  */
 public final class ListingSearchTask implements AiTask<ListingSearchResult> {
 
+    /** Fewer usable listings than this is not a useful live result (the pricing engine needs three). */
+    static final int MIN_USABLE = 3;
+
     private final MarketQuery query;
 
     public ListingSearchTask(MarketQuery query) {
@@ -44,17 +47,31 @@ public final class ListingSearchTask implements AiTask<ListingSearchResult> {
         return result.listings() == null ? List.of("The JSON must have a \"listings\" array.") : List.of();
     }
 
-    /** At least one listing must be a page the searches actually returned; otherwise the answer is not trusted. */
+    /**
+     * The answer is used only when at least {@link #MIN_USABLE} listings come from a page the searches really
+     * returned and give the year, kilometres and price; otherwise the model is asked again, and after that the
+     * caching proxy falls back to the last saved result or the seeded data.
+     */
     @Override
     public List<String> validate(ListingSearchResult result, LLMResponse response) {
         List<String> problems = validate(result);
-        if (!problems.isEmpty() || result.listings().isEmpty()) {
+        if (!problems.isEmpty()) {
             return problems;
         }
-        Set<String> sources = canonical(response.sourceUrls());
-        boolean anyVerified = result.listings().stream().anyMatch(l -> sources.contains(canonical(l.url())));
-        return anyVerified ? List.of() : List.of("None of the listing URLs appeared in your search results. Only report "
-                + "listings whose page you found in the search results, using that exact URL.");
+        long usable = usable(result, response.sourceUrls(), query).size();
+        return usable >= MIN_USABLE ? List.of() : List.of("Only " + usable + " of your listings came from a page that "
+                + "appeared in your search or fetch results and gave the year, kilometres and price. Report at least "
+                + MIN_USABLE + " such listings: open the results or listing pages, copy each listing's URL exactly as "
+                + "it appeared in your search or fetch results, and copy its year, kilometres and price from the page.");
+    }
+
+    /** Listings of the searched model and years, from a page the searches returned, with year, km and price. */
+    static List<FoundListing> usable(ListingSearchResult result, Set<String> sourceUrls, MarketQuery query) {
+        return verified(result, sourceUrls).stream()
+                .filter(l -> l.year() != null && l.odometerKm() != null && l.askingPrice() != null && l.askingPrice() > 0)
+                .filter(l -> l.year() >= query.minYear() && l.year() <= query.maxYear())
+                .filter(l -> query.model().equalsIgnoreCase(l.model() == null ? "" : l.model().strip()))
+                .toList();
     }
 
     @Override
