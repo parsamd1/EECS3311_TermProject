@@ -149,4 +149,13 @@ class LiveSearchSourceTest {
                 ListingSearchTask.canonical("https://www.kijiji.ca/v/1/?utm=x#top"));
         assertFalse(ListingSearchTask.canonical("https://kijiji.ca/v/1").equals(ListingSearchTask.canonical("https://kijiji.ca/v/2")));
     }
+
+    @Test
+    void searchPrefersTheSellersModelYear() {
+        LLMRequest request = new PromptComposer().listingSearch(
+                new MarketQuery("Mazda", "CX-5", 2016, 2024, "Toronto", "ON"));
+        assertTrue(request.user().contains("from model years 2016 to 2024"));
+        assertTrue(request.user().contains("The seller's vehicle is a 2020, so prefer the listings closest to that "
+                + "model year"));
+    }
 }

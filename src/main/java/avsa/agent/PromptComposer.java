@@ -51,7 +51,10 @@ public final class PromptComposer {
         String user = "Find used " + query.make() + " " + query.model() + " vehicles from model years "
                 + query.minYear() + " to " + query.maxYear() + " that are for sale near " + query.city() + ", "
                 + query.province() + ", Canada. Prefer individual listing pages on " + String.join(", ", MARKETPLACE_DOMAINS)
-                + ". Return up to " + MAX_LISTINGS + " listings.";
+                // The range is the widest the finder may widen to; the seller's own model year is its middle.
+                + ". The seller's vehicle is a " + (query.minYear() + query.maxYear()) / 2 + ", so prefer the "
+                + "listings closest to that model year and use the other years only to fill the list. Return up to "
+                + MAX_LISTINGS + " listings.";
         return new LLMRequest("listing-search", LISTING_SEARCH_SYSTEM, user, SEARCH_MAX_TOKENS,
                 new WebSearchOptions(MAX_SEARCHES, MARKETPLACE_DOMAINS, query.city(), query.province(), "CA",
                         MAX_FETCHES, MAX_FETCH_TOKENS));
