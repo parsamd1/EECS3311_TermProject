@@ -25,7 +25,7 @@ class ListingCacheTest {
         new ListingCache(file, new JsonMapper()).put(QUERY, new MarketSearchResult("Live search", List.of(raw), 2, false,
                 when));
 
-        MarketSearchResult loaded = new ListingCache(file, new JsonMapper()).latest(QUERY).orElseThrow();
+        MarketSearchResult loaded = new ListingCache(file, new JsonMapper()).latest("Live search", QUERY).orElseThrow();
         assertEquals("Live search", loaded.sourceName());
         assertEquals(when, loaded.retrievedAt());
         assertEquals(raw, loaded.listings().get(0));
@@ -35,7 +35,7 @@ class ListingCacheTest {
     @Test
     void aCorruptFileStartsEmpty(@TempDir Path dir) throws IOException {
         Path file = Files.writeString(dir.resolve("listings.json"), "{ not json");
-        assertTrue(new ListingCache(file, new JsonMapper()).latest(QUERY).isEmpty());
+        assertTrue(new ListingCache(file, new JsonMapper()).latest("Live search", QUERY).isEmpty());
     }
 
     @Test
@@ -48,5 +48,22 @@ class ListingCacheTest {
                 new ListingCache(file, new JsonMapper())).search(QUERY);
         assertEquals("Live search", result.sourceName());
         assertTrue(result.fromCache());
+    }
+
+    @Test
+    void aCsvImportDoesNotReplaceTheSavedLiveResult(@TempDir Path dir) {
+        Path file = dir.resolve("listings.json");
+        ListingCache cache = new ListingCache(file, new JsonMapper());
+        Instant live = Instant.parse("2026-11-08T20:00:00Z");
+        cache.put(QUERY, new MarketSearchResult("Live search", List.of(), 0, false, live));
+        cache.put(QUERY, new MarketSearchResult("Imported CSV", List.of(), 2, false, live.plusSeconds(600)));
+
+        ListingCache reloaded = new ListingCache(file, new JsonMapper());
+        assertEquals(live, reloaded.latest("Live search", QUERY).orElseThrow().retrievedAt());
+        assertEquals(2, reloaded.latest("Imported CSV", QUERY).orElseThrow().skippedRecords());
+        MarketSearchResult fallback = new CachingMarketDataSource(new LiveSearchSource(),
+                new SeededDatasetSource(Path.of("data", "listings.csv"), java.time.Clock.systemUTC()), reloaded)
+                .search(QUERY);
+        assertEquals("Live search", fallback.sourceName(), "a failed live search falls back to live, not to the CSV");
     }
 }

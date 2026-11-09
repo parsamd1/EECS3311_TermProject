@@ -38,6 +38,6 @@ public final class CachingMarketDataSource implements MarketDataSource {
                 // Handled below in the same way as a source that reports itself unavailable.
             }
         }
-        return cache.latest(query).map(MarketSearchResult::asCached).orElseGet(() -> fallback.search(query));
+        return cache.latest(real.name(), query).map(MarketSearchResult::asCached).orElseGet(() -> fallback.search(query));
     }
 }

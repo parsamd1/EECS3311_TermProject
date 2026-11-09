@@ -12,8 +12,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * The latest successful result per query. With a file it survives restarts, so when a source
- * fails, even in a new run of the app, the last real result is still available with its date.
+ * The latest successful result per source and query. With a file it survives restarts, so when a
+ * source fails, even in a new run of the app, its last real result is still available with its date.
+ * Results are kept per source, so a CSV import never stands in for a failed live search.
  */
 public final class ListingCache {
 
@@ -21,7 +22,10 @@ public final class ListingCache {
     record Entry(MarketQuery query, MarketSearchResult result) {
     }
 
-    private final Map<MarketQuery, MarketSearchResult> latest = new HashMap<>();
+    private record Key(String sourceName, MarketQuery query) {
+    }
+
+    private final Map<Key, MarketSearchResult> latest = new HashMap<>();
     private final Path file;
     private final JsonMapper mapper;
 
@@ -37,7 +41,7 @@ public final class ListingCache {
         if (file != null && Files.isReadable(file)) {
             try {
                 for (Entry entry : mapper.read(file, Entry[].class)) {
-                    latest.put(entry.query(), entry.result());
+                    latest.put(new Key(entry.result().sourceName(), entry.query()), entry.result());
                 }
             } catch (IOException | RuntimeException e) {
                 latest.clear();
@@ -46,12 +50,13 @@ public final class ListingCache {
     }
 
     public void put(MarketQuery query, MarketSearchResult result) {
-        latest.put(query, result);
+        latest.put(new Key(result.sourceName(), query), result);
         save();
     }
 
-    public Optional<MarketSearchResult> latest(MarketQuery query) {
-        return Optional.ofNullable(latest.get(query));
+    /** The last successful result of the named source for this query. */
+    public Optional<MarketSearchResult> latest(String sourceName, MarketQuery query) {
+        return Optional.ofNullable(latest.get(new Key(sourceName, query)));
     }
 
     /** A failed write only loses the copy on disk; the cache still works for this run. */
@@ -60,7 +65,7 @@ public final class ListingCache {
             return;
         }
         List<Entry> entries = new ArrayList<>();
-        latest.forEach((query, result) -> entries.add(new Entry(query, result)));
+        latest.forEach((key, result) -> entries.add(new Entry(key.query(), result)));
         try {
             Files.createDirectories(file.getParent());
             Path temp = Files.createTempFile(file.getParent(), "listings", ".tmp");
